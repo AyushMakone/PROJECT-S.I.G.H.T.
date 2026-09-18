@@ -1,0 +1,11 @@
+{
+  "missionId": "SIGHT-M01",
+  "objective": "Perimeter Surveillance",
+  "relevantObjects": ["Person", "Vehicle"],
+  "persistence": "2 frames",
+  "priorityZones": ["Zone Alpha (North Ridge)", "Zone Beta (East Access Gate)"],
+  "evidence": "Disabled",
+  "communicationPolicy": "EVENT ONLY",
+  "batteryRthThreshold": "20%",
+  "description": "Autonomous stealth perimeter reconnaissance over military testing ground facility. Transmit only confirmed high-persistence targets in designated priority hot zones."
+}

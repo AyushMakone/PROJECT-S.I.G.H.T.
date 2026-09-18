@@ -1,0 +1,11 @@
+{
+  "missionId": "SIGHT-M02",
+  "objective": "Border Sector Reconnaissance",
+  "relevantObjects": ["Vehicle", "Person", "Vessel"],
+  "persistence": "3 frames",
+  "priorityZones": ["Border Checkpoint Echo", "River Crossing Sector 4"],
+  "evidence": "Enabled",
+  "communicationPolicy": "EVENT & EVIDENCE",
+  "batteryRthThreshold": "25%",
+  "description": "High-altitude stealth sector monitor with optical snapshot capture enabled for high-confidence border intrusion events."
+}
