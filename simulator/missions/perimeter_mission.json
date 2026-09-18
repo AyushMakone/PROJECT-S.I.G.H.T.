@@ -1,0 +1,58 @@
+{
+  "missionId": "SIGHT-M01",
+  "objective": "Perimeter Surveillance",
+  "takeoffAltitude_m": 84.0,
+  "defaultSpeed_mps": 12.0,
+  "waypoints": [
+    {
+      "id": "wp-0",
+      "name": "HOME",
+      "lat": 34.0522,
+      "lng": -117.8247,
+      "altitude_m": 0.0,
+      "speed_mps": 10.0,
+      "acceptance_radius_m": 5.0,
+      "is_priority_zone": false
+    },
+    {
+      "id": "wp-1",
+      "name": "WAYPOINT 1",
+      "lat": 34.0585,
+      "lng": -117.8205,
+      "altitude_m": 75.0,
+      "speed_mps": 12.0,
+      "acceptance_radius_m": 8.0,
+      "is_priority_zone": false
+    },
+    {
+      "id": "wp-2",
+      "name": "WAYPOINT 2",
+      "lat": 34.0645,
+      "lng": -117.8130,
+      "altitude_m": 84.0,
+      "speed_mps": 12.0,
+      "acceptance_radius_m": 8.0,
+      "is_priority_zone": false
+    },
+    {
+      "id": "wp-3",
+      "name": "PRIORITY ZONE ALPHA",
+      "lat": 34.0620,
+      "lng": -117.8010,
+      "altitude_m": 84.0,
+      "speed_mps": 10.0,
+      "acceptance_radius_m": 12.0,
+      "is_priority_zone": true
+    },
+    {
+      "id": "wp-4",
+      "name": "WAYPOINT 3",
+      "lat": 34.0540,
+      "lng": -117.8060,
+      "altitude_m": 80.0,
+      "speed_mps": 12.0,
+      "acceptance_radius_m": 8.0,
+      "is_priority_zone": false
+    }
+  ]
+}
