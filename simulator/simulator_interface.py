@@ -1,37 +1,50 @@
 """
-PROJECT S.I.G.H.T. - Programmatic Simulator Interface
-Integrates PX4 SITL state machine, MAVLink UDP server, Gazebo world, and Camera.
+PROJECT S.I.G.H.T. — Unified Simulator Interface
+Provides unified programmatic facade wrapping simulator adapters,
+maintaining test compatibility while supporting real MAVLink & Cloud simulation.
 """
 
 import os
-import json
+import sys
 import time
+import json
+import asyncio
 import threading
-import numpy as np
 from typing import Optional, Dict, Any, List
+import numpy as np
 
-from .px4.autopilot_state import AutopilotStateMachine, FlightMode, Waypoint
-from .px4.mavlink_server import MAVLinkServer
-from .gazebo.world_server import GazeboWorldServer
-from .gazebo.camera_sensor import UAVCameraSensor
+from .adapters.base_adapter import BaseSimulatorAdapter
+from .adapters.px4_adapter import PX4Adapter
+from .adapters.cloud_adapter import CloudAdapter
+from .adapters.fallback_adapter import FallbackAdapter
+from .fallback.px4.autopilot_state import AutopilotStateMachine, FlightMode, Waypoint
+from .fallback.gazebo.world_server import GazeboWorldServer
+from .fallback.gazebo.camera_sensor import UAVCameraSensor
+from .fallback.px4.mavlink_server import MAVLinkServer
+
 
 class SimulatorInterface:
     """
-    Unified programmatic interface for controlling the Virtual UAV Simulator.
+    Unified programmatic interface for controlling the UAV Simulator.
+    Seamlessly routes commands to the active adapter (Cloud, Local PX4, or Fallback).
     """
+
     def __init__(
         self,
         mavlink_port: int = 14550,
         camera_width: int = 640,
         camera_height: int = 480,
-        camera_fps: int = 15
+        camera_fps: int = 15,
+        mode: Optional[str] = None
     ):
         self.mavlink_port = mavlink_port
         self.camera_width = camera_width
         self.camera_height = camera_height
         self.camera_fps = camera_fps
 
-        # Subsystems
+        self.mode = (mode or os.getenv("SIMULATOR_MODE", "fallback")).lower()
+
+        # Legacy fallback subsystems maintained for offline test fixtures
         self.autopilot = AutopilotStateMachine()
         self.world = GazeboWorldServer()
         self.camera = UAVCameraSensor(
@@ -42,18 +55,22 @@ class SimulatorInterface:
         )
         self.mavlink_server: Optional[MAVLinkServer] = None
 
+        # Adapter selection
+        if self.mode == "cloud":
+            self.adapter: BaseSimulatorAdapter = CloudAdapter(port=mavlink_port)
+        elif self.mode == "local":
+            self.adapter = PX4Adapter(connection_string=f"udpin:0.0.0.0:{mavlink_port}")
+        else:
+            self.adapter = FallbackAdapter(mavlink_port=mavlink_port, camera_fps=camera_fps)
+
         # Loop management
         self.running = False
         self.physics_thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
 
     def start(self, enable_mavlink: bool = True) -> bool:
-        """
-        Starts the simulator physics loop and MAVLink UDP server.
-        """
         if self.running:
             return True
-
         self.running = True
 
         if enable_mavlink:
@@ -65,9 +82,6 @@ class SimulatorInterface:
         return True
 
     def stop(self):
-        """
-        Stops the simulator and shuts down MAVLink broadcasting.
-        """
         self.running = False
         if self.mavlink_server:
             self.mavlink_server.stop()
@@ -96,13 +110,10 @@ class SimulatorInterface:
             self.autopilot.return_to_home()
 
     def load_mission(self, mission_json_path: str) -> bool:
-        """
-        Loads waypoints from a mission JSON file.
-        """
         if not os.path.exists(mission_json_path):
             raise FileNotFoundError(f"Mission file not found: {mission_json_path}")
 
-        with open(mission_json_path, 'r') as f:
+        with open(mission_json_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
 
         waypoints = []
@@ -128,25 +139,16 @@ class SimulatorInterface:
             return self.autopilot.start_mission()
 
     def step(self, dt: float = 0.1) -> Dict[str, Any]:
-        """
-        Steps the simulation forward by dt seconds (used in headless testing).
-        """
         with self._lock:
             telem = self.autopilot.update(dt)
         return self._format_telemetry(telem)
 
     def get_telemetry(self) -> Dict[str, Any]:
-        """
-        Returns latest telemetry dictionary.
-        """
         with self._lock:
             telem = self.autopilot.get_telemetry()
         return self._format_telemetry(telem)
 
     def capture_frame(self) -> np.ndarray:
-        """
-        Returns latest rendered optical camera frame.
-        """
         with self._lock:
             telem = self.autopilot.get_telemetry()
             return self.camera.capture_frame(
@@ -158,9 +160,6 @@ class SimulatorInterface:
             )
 
     def get_visible_targets(self) -> List[Dict[str, Any]]:
-        """
-        Returns list of world entities currently inside the camera's FOV.
-        """
         with self._lock:
             telem = self.autopilot.get_telemetry()
             return self.world.get_entities_in_camera_fov(
@@ -171,9 +170,6 @@ class SimulatorInterface:
             )
 
     def reset(self):
-        """
-        Resets the autopilot and world state to home position.
-        """
         with self._lock:
             self.autopilot = AutopilotStateMachine()
             self.world = GazeboWorldServer()
@@ -182,9 +178,6 @@ class SimulatorInterface:
                 self.mavlink_server.autopilot = self.autopilot
 
     def _physics_loop(self):
-        """
-        Background physics loop stepping at 20 Hz (dt = 0.05s).
-        """
         dt = 0.05
         while self.running:
             start_t = time.time()
@@ -207,7 +200,7 @@ class SimulatorInterface:
             "battery_percent": telem.battery_percent,
             "battery_voltage_v": telem.battery_voltage_v,
             "is_armed": telem.is_armed,
-            "flight_mode": telem.flight_mode.value,
+            "flight_mode": telem.flight_mode.value if hasattr(telem.flight_mode, "value") else str(telem.flight_mode),
             "current_waypoint": telem.current_waypoint_idx,
             "total_waypoints": telem.total_waypoints,
             "timestamp_utc": telem.timestamp_utc

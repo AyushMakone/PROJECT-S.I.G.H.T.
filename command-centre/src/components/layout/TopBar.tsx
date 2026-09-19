@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSimulation } from '../../hooks/useSimulation';
 import { StatusBadge } from '../common/StatusBadge';
+import { checkBackendHealth } from '../../services/api';
 import {
   Radio,
   Play,
@@ -9,7 +10,8 @@ import {
   SkipForward,
   Shield,
   Activity,
-  BatteryCharging
+  BatteryCharging,
+  Server
 } from 'lucide-react';
 
 export const TopBar: React.FC = () => {
@@ -25,6 +27,7 @@ export const TopBar: React.FC = () => {
   } = useSimulation();
 
   const [utcTime, setUtcTime] = useState<string>('');
+  const [backendOnline, setBackendOnline] = useState<boolean>(false);
 
   useEffect(() => {
     const updateTime = () => {
@@ -37,7 +40,19 @@ export const TopBar: React.FC = () => {
     };
     updateTime();
     const interval = setInterval(updateTime, 1000);
-    return () => clearInterval(interval);
+
+    const checkHealth = () => {
+      checkBackendHealth().then(res => {
+        setBackendOnline(res.status === 'OPERATIONAL');
+      }).catch(() => setBackendOnline(false));
+    };
+    checkHealth();
+    const healthInterval = setInterval(checkHealth, 5000);
+
+    return () => {
+      clearInterval(interval);
+      clearInterval(healthInterval);
+    };
   }, []);
 
   const getGovernorVariant = (decision: string) => {
@@ -95,6 +110,16 @@ export const TopBar: React.FC = () => {
       <div className="flex items-center gap-3">
         {/* Telemetry quick status */}
         <div className="hidden md:flex items-center gap-3 text-xs font-mono bg-[#0c121d] px-3 py-1.5 rounded border border-slate-800">
+          <div className="flex items-center gap-1.5" title="FastAPI S.I.G.H.T. Core Backend">
+            <Server className={`w-3.5 h-3.5 ${backendOnline ? 'text-emerald-400' : 'text-red-400'}`} />
+            <span className="text-slate-400">BACKEND:</span>
+            <span className={`font-bold ${backendOnline ? 'text-emerald-400' : 'text-red-400'}`}>
+              {backendOnline ? 'CONNECTED' : 'OFFLINE'}
+            </span>
+          </div>
+
+          <div className="w-px h-3.5 bg-slate-700" />
+
           <div className="flex items-center gap-1.5">
             <Activity className="w-3.5 h-3.5 text-emerald-400" />
             <span className="text-slate-400">SYS:</span>
