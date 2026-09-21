@@ -13,6 +13,7 @@ import {
 
 export const UAVStatus: React.FC = () => {
   const { telemetry, communication } = useSimulation();
+  const live = telemetry.hasTelemetry;
 
   return (
     <div className="bg-[#0b1019] rounded-xl p-4 border border-slate-800 font-mono">
@@ -23,29 +24,29 @@ export const UAVStatus: React.FC = () => {
             UAV AVIONICS & LINK
           </span>
         </div>
-        <StatusBadge label={telemetry.systemStatus} variant="emerald" size="sm" pulse={true} />
+        <StatusBadge label={live ? telemetry.systemStatus : 'UNKNOWN'} variant={live ? 'emerald' : 'slate'} size="sm" pulse={live} />
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
         {/* Altitude */}
         <div className="p-2 rounded bg-[#0d1422] border border-slate-800/80">
-          <span className="text-[10px] text-slate-400 block uppercase">Altitude</span>
-          <span className="text-sm font-bold text-slate-100">{telemetry.altitude} m</span>
-          <span className="text-[10px] text-slate-400 block">+0.1 m/s</span>
+          <span className="text-[10px] text-slate-400 block uppercase">Altitude AGL</span>
+          <span className="text-sm font-bold text-slate-100">{live ? `${telemetry.relativeAltitude ?? 'N/A'} m` : '---'}</span>
+          <span className="text-[10px] text-slate-400 block">{live ? `${telemetry.climbRate} m/s` : 'UNKNOWN'}</span>
         </div>
 
         {/* Speed */}
         <div className="p-2 rounded bg-[#0d1422] border border-slate-800/80">
           <span className="text-[10px] text-slate-400 block uppercase">Speed</span>
-          <span className="text-sm font-bold text-slate-100">{telemetry.speed} m/s</span>
-          <span className="text-[10px] text-slate-400 block">Ground Track</span>
+          <span className="text-sm font-bold text-slate-100">{live ? `${telemetry.speed} m/s` : '---'}</span>
+          <span className="text-[10px] text-slate-400 block">{live ? 'Ground Track' : 'UNKNOWN'}</span>
         </div>
 
         {/* Heading */}
         <div className="p-2 rounded bg-[#0d1422] border border-slate-800/80">
           <span className="text-[10px] text-slate-400 block uppercase">Heading</span>
-          <span className="text-sm font-bold text-amber-400">{telemetry.heading}</span>
-          <span className="text-[10px] text-slate-400 block">{telemetry.headingDegrees}° Mag</span>
+          <span className="text-sm font-bold text-amber-400">{live ? telemetry.heading : '---'}</span>
+          <span className="text-[10px] text-slate-400 block">{live ? `${telemetry.headingDegrees}° True North` : 'UNKNOWN'}</span>
         </div>
 
         {/* Battery */}
@@ -53,19 +54,19 @@ export const UAVStatus: React.FC = () => {
           <span className="text-[10px] text-slate-400 block uppercase">Battery</span>
           <span
             className={`text-sm font-bold ${
-              telemetry.battery < 25 ? 'text-red-400' : 'text-emerald-400'
+              !live ? 'text-slate-400' : telemetry.battery < 25 ? 'text-red-400' : 'text-emerald-400'
             }`}
           >
-            {telemetry.battery}%
+            {live ? `${telemetry.battery}%` : '---'}
           </span>
-          <span className="text-[10px] text-slate-400 block">{telemetry.batteryVoltage} V</span>
+          <span className="text-[10px] text-slate-400 block">{live ? `${telemetry.batteryVoltage} V` : 'UNKNOWN'}</span>
         </div>
 
         {/* GPS Status */}
         <div className="p-2 rounded bg-[#0d1422] border border-slate-800/80">
           <span className="text-[10px] text-slate-400 block uppercase">GPS Fix</span>
-          <span className="text-sm font-bold text-emerald-400">{telemetry.gpsStatus}</span>
-          <span className="text-[10px] text-slate-400 block">{telemetry.gpsSatellites} Sats</span>
+          <span className="text-sm font-bold text-emerald-400">{live ? telemetry.gpsStatus : 'UNKNOWN'}</span>
+          <span className="text-[10px] text-slate-400 block">{live ? `${telemetry.gpsSatellites} Sats` : 'UNKNOWN'}</span>
         </div>
 
         {/* Mission Comm */}

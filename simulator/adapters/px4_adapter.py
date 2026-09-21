@@ -20,6 +20,7 @@ import math
 import asyncio
 import logging
 import threading
+import queue
 from typing import Dict, Any, Optional, List
 import numpy as np
 
@@ -80,7 +81,13 @@ class PX4Adapter(BaseSimulatorAdapter):
         self._rx_thread: Optional[threading.Thread] = None
         self._running = False
         self._lock = threading.Lock()
+        self._command_ack: Dict[int, int] = {}
+        self._last_command_ack: Optional[int] = None
+        self._last_command_message = ""
+        self._mission_messages: queue.Queue = queue.Queue()
+        self._last_mission_ack: Optional[int] = None
         self._autopilot_type: int = 0  # 0=unknown, 3=ArduPilot, 12=PX4
+        self._vehicle_type: Optional[int] = None
 
         # Telemetry store
         self.telemetry = SimulatorTelemetry()
@@ -88,9 +95,30 @@ class PX4Adapter(BaseSimulatorAdapter):
         self._last_frame: Optional[np.ndarray] = None
         self._camera_provider = None
 
+        # Bounded velocity-setpoint lifetime: ArduPilot Guided mode expects repeated
+        # SET_POSITION_TARGET_LOCAL_NED packets while the command is active. We keep
+        # the loop finite to avoid leaving the vehicle in continuous motion.
+        self._move_duration_s = 5.0
+        self._move_interval_s = 0.10
+        self._max_velocity_mps = 10.0
+        self._max_yaw_rate_deg_s = 180.0
+
     @property
     def mode_name(self) -> str:
-        return "local" if "127.0.0.1" in self.connection_string or "0.0.0.0" in self.connection_string else "cloud"
+        conn = (self.connection_string or "").lower()
+        local_markers = (
+            "127.0.0.1",
+            "0.0.0.0",
+            "localhost",
+            "172.30.16.1",
+            "172.30.",
+            "192.168.",
+            "10.",
+            "169.254.",
+        )
+        if any(marker in conn for marker in local_markers):
+            return "local"
+        return "cloud"
 
     @property
     def is_connected(self) -> bool:
@@ -110,9 +138,33 @@ class PX4Adapter(BaseSimulatorAdapter):
         with self._lock:
             return self.telemetry.flight_mode
 
+    @property
+    def autopilot_type(self) -> int:
+        return self._autopilot_type
+
+    @property
+    def vehicle_type(self) -> Optional[int]:
+        return self._vehicle_type
+
     def set_camera_provider(self, provider):
         """Attaches an optical camera feed provider (e.g., FrameManager)."""
         self._camera_provider = provider
+
+    @staticmethod
+    def _udp_input_mode(connection_string: str) -> bool:
+        """Return the correct UDP socket mode for the live MAVLink topology.
+
+        ArduPilot/MAVProxy deployments commonly use a single bidirectional UDP socket
+        that receives telemetry and sends command replies back to the active remote peer.
+        Explicitly bind in input/server mode for `udp:` and `udpin:` endpoints, while
+        keeping `udpout:` as a send-only client connection.
+        """
+        lowered = connection_string.lower()
+        if lowered.startswith("udpout:"):
+            return False
+        if lowered.startswith("udp:") or lowered.startswith("udpin:"):
+            return True
+        return True
 
     async def connect(self) -> bool:
         """
@@ -127,11 +179,14 @@ class PX4Adapter(BaseSimulatorAdapter):
 
         logger.info(f"[SIM] Connecting to MAVLink endpoint: {self.connection_string}")
         try:
-            # mavutil.mavlink_connection creates the network transport
+            # Explicitly select UDP server/client semantics so the GCS path can both
+            # receive telemetry and send commands back through the live MAVProxy bridge.
+            input_mode = self._udp_input_mode(self.connection_string)
             self._master = mavutil.mavlink_connection(
                 self.connection_string,
                 source_system=self.source_system,
                 source_component=self.source_component,
+                input=input_mode,
                 autoreconnect=True
             )
             self._running = True
@@ -146,9 +201,9 @@ class PX4Adapter(BaseSimulatorAdapter):
                     return True
                 await asyncio.sleep(0.1)
 
-            logger.info(f"[SIM] Connection initiated to {self.connection_string}. Listening for incoming heartbeat...")
-            self._connected = True
-            return True
+            logger.warning(f"[SIM] No MAVLink heartbeat received from {self.connection_string}")
+            await self.disconnect()
+            return False
         except Exception as e:
             logger.error(f"[SIM] Failed to connect to MAVLink endpoint: {e}")
             self._connected = False
@@ -193,11 +248,6 @@ class PX4Adapter(BaseSimulatorAdapter):
     async def takeoff(self, altitude: float = 10.0) -> bool:
         """Sends MAV_CMD_NAV_TAKEOFF with target altitude in meters."""
         logger.info(f"[SIM] TAKEOFF command sent (altitude={altitude}m)")
-        # Arm first if disarmed
-        if not self.is_armed:
-            await self.arm()
-            await asyncio.sleep(0.5)
-
         return await self._send_command_long(
             command=mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
             param1=0.0, # Minimum pitch
@@ -215,38 +265,107 @@ class PX4Adapter(BaseSimulatorAdapter):
     async def hover(self) -> bool:
         """Sends hold position / loiter command."""
         logger.info("[SIM] HOVER / LOITER command sent")
-        # Set custom mode to AUTO.LOITER or send 0-velocity hold
-        return await self.move(0.0, 0.0, 0.0, 0.0)
+        if not self._master:
+            return False
+        try:
+            if self._autopilot_type == 3:
+                self._master.set_mode('LOITER')
+                return True
+            return await self._send_command_long(
+                command=mavutil.mavlink.MAV_CMD_DO_SET_MODE,
+                param1=float(mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED),
+                param2=5.0
+            )
+        except Exception as e:
+            logger.warning(f"[SIM] set_mode_loiter failed: {e}")
+            return False
+
+    def _send_velocity_setpoint(self, vx: float, vy: float, vz: float, yaw_rate: float) -> bool:
+        """Send a BODY_NED velocity + yaw-rate setpoint using SET_POSITION_TARGET_LOCAL_NED."""
+        if not self._master:
+            return False
+
+        try:
+            # Ignore position, acceleration/force and absolute yaw.
+            # # Keep vx/vy/vz and yaw_rate active.
+            # # 0x05C7 = X/Y/Z + AX/AY/AZ + YAW ignored; YAW_RATE enabled.
+            type_mask = 0x05C7
+            yaw_rate_rad = math.radians(float(yaw_rate))
+
+            with self._lock:
+                self._master.mav.set_position_target_local_ned_send(
+                    int(time.time() * 1000) & 0xFFFFFFFF,
+                    self.target_system,
+                    self.target_component,
+                    mavutil.mavlink.MAV_FRAME_BODY_NED,
+                    type_mask,
+                    0.0, 0.0, 0.0,
+                    float(vx), float(vy), float(vz),
+                    0.0, 0.0, 0.0,
+                    0.0, float(yaw_rate_rad)
+                )
+            return True
+        except Exception as e:
+            logger.error(f"[SIM] Error sending velocity move: {e}")
+            return False
 
     async def move(self, vx: float, vy: float, vz: float, yaw_rate: float = 0.0) -> bool:
         """
-        Sends velocity setpoint in body NED frame using SET_POSITION_TARGET_LOCAL_NED.
+        Send a bounded BODY_NED velocity setpoint for ArduPilot Guided mode.
+
+        ArduCopter expects repeated SET_POSITION_TARGET_LOCAL_NED commands while the
+        velocity target is active. A single packet is not sufficient to move the
+        vehicle reliably. We therefore emit a short pulse of velocity updates for a
+        bounded lifetime and end with an explicit zero-velocity hold/stop packet.
+
         vx: forward (m/s), vy: right (m/s), vz: down (m/s, negative is climb)
         """
         if not self._master:
             return False
 
         try:
-            # Bitmask: ignore position, ignore accel, ignore yaw. Use velocity + yaw_rate
-            # 0b0000101111000111 = 0x0BC7 (velocity + yaw_rate)
-            type_mask = 0b0000101111000111
-            yaw_rate_rad = math.radians(yaw_rate)
-
-            self._master.mav.set_position_target_local_ned_send(
-                int(time.time() * 1000) & 0xFFFFFFFF, # boot time ms
-                self.target_system,
-                self.target_component,
-                mavutil.mavlink.MAV_FRAME_BODY_NED,
-                type_mask,
-                0.0, 0.0, 0.0, # position (ignored)
-                float(vx), float(vy), float(vz), # velocity
-                0.0, 0.0, 0.0, # accel (ignored)
-                0.0, float(yaw_rate_rad) # yaw, yaw_rate
-            )
-            return True
-        except Exception as e:
-            logger.error(f"[SIM] Error sending velocity move: {e}")
+            vx_f = float(vx)
+            vy_f = float(vy)
+            vz_f = float(vz)
+            yaw_rate_f = float(yaw_rate)
+        except (TypeError, ValueError):
+            logger.warning("[SIM] move() received non-numeric velocity arguments")
             return False
+
+        values = (vx_f, vy_f, vz_f, yaw_rate_f)
+        if not all(math.isfinite(v) for v in values):
+            logger.warning("[SIM] move() received non-finite velocity values")
+            return False
+
+        max_vel = self._max_velocity_mps
+        max_yaw = self._max_yaw_rate_deg_s
+        if any(abs(v) > max_vel for v in (vx_f, vy_f, vz_f)):
+            logger.warning(
+                "[SIM] move() rejected absurd velocity command: vx=%s vy=%s vz=%s (max %.1f m/s)",
+                vx_f, vy_f, vz_f, max_vel,
+            )
+            return False
+        if abs(yaw_rate_f) > max_yaw:
+            logger.warning(
+                "[SIM] move() rejected absurd yaw rate: %.2f deg/s (max %.1f deg/s)",
+                yaw_rate_f, max_yaw,
+            )
+            return False
+
+        duration_s = self._move_duration_s
+        if all(abs(v) <= 1e-9 for v in (vx_f, vy_f, vz_f, yaw_rate_f)):
+            duration_s = 0.25
+
+        deadline = time.monotonic() + duration_s
+        while time.monotonic() < deadline:
+            if not self._send_velocity_setpoint(vx_f, vy_f, vz_f, yaw_rate_f):
+                return False
+            await asyncio.sleep(self._move_interval_s)
+
+        # Explicit stop/hold command after the bounded lifetime so the vehicle does
+        # not continue drifting under stale velocity data.
+        self._send_velocity_setpoint(0.0, 0.0, 0.0, 0.0)
+        return True
 
     async def set_heading(self, heading_deg: float) -> bool:
         """Sends MAV_CMD_CONDITION_YAW to align with target heading."""
@@ -268,6 +387,16 @@ class PX4Adapter(BaseSimulatorAdapter):
 
     async def get_telemetry(self) -> Dict[str, Any]:
         """Returns standardized telemetry dictionary."""
+        if not self.is_connected:
+            return {
+                "connected": False, "lat": None, "lng": None, "altitude": None,
+                "speed": None, "headingDegrees": None, "battery": None,
+                "linkStatus": "LOST",
+                "systemStatus": "STANDBY",
+                "isArmed": None,
+                "flightMode": None,
+                "timestamp": None,
+            }
         with self._lock:
             return self.telemetry.to_command_centre_schema()
 
@@ -278,10 +407,81 @@ class PX4Adapter(BaseSimulatorAdapter):
         return self._last_frame
 
     async def send_mission(self, mission: Dict[str, Any]) -> bool:
-        """Uploads mission waypoints to autopilot."""
-        logger.info(f"[SIM] Mission upload received: {len(mission.get('waypoints', []))} waypoints")
-        # In full implementation, uses MAVLink mission protocol (MISSION_COUNT, MISSION_ITEM_INT)
-        return True
+        """Upload global-relative waypoints using the MAVLink mission protocol."""
+        if not self._master or not self.is_connected:
+            self._last_mission_ack = None
+            return False
+
+        waypoints = mission.get("waypoints", [])
+        if not waypoints:
+            self._last_mission_ack = None
+            return False
+
+        while not self._mission_messages.empty():
+            try:
+                self._mission_messages.get_nowait()
+            except queue.Empty:
+                break
+
+        try:
+            with self._lock:
+                self._master.mav.mission_clear_all_send(self.target_system, self.target_component, 0)
+                self._master.mav.mission_count_send(
+                    self.target_system, self.target_component, len(waypoints), 0
+                )
+
+            for expected_seq in range(len(waypoints)):
+                request = await self._wait_for_mission_message(timeout=5.0)
+                if request is None or request.get_type() not in ("MISSION_REQUEST_INT", "MISSION_REQUEST"):
+                    self._last_mission_ack = None
+                    return False
+                sequence = int(getattr(request, "seq", expected_seq))
+                if sequence != expected_seq:
+                    self._last_mission_ack = None
+                    return False
+                waypoint = waypoints[sequence]
+                lat = int(round(float(waypoint["lat"]) * 10_000_000))
+                lon_value = waypoint.get("lon", waypoint.get("lng"))
+                lon = int(round(float(lon_value) * 10_000_000))
+                altitude = float(waypoint["altitude"])
+                with self._lock:
+                    self._master.mav.mission_item_int_send(
+                        self.target_system, self.target_component, sequence,
+                        mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
+                        mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
+                        1 if sequence == 0 else 0, 1,
+                        float(waypoint.get("acceptanceRadius", 10.0)), 0.0, 0.0, 0.0,
+                        lat, lon, altitude
+                    )
+
+            ack = await self._wait_for_mission_message(timeout=5.0)
+            self._last_mission_ack = int(getattr(ack, "type", -1)) if ack and ack.get_type() == "MISSION_ACK" else None
+            return self._last_mission_ack == mavutil.mavlink.MAV_MISSION_ACCEPTED
+        except (KeyError, TypeError, ValueError, AttributeError) as exc:
+            logger.warning("[SIM] Mission upload failed: %s", exc)
+            self._last_mission_ack = None
+            return False
+
+    @property
+    def last_command_ack(self) -> Optional[int]:
+        return self._last_command_ack
+
+    @property
+    def last_command_message(self) -> str:
+        return self._last_command_message
+
+    @property
+    def last_mission_ack(self) -> Optional[int]:
+        return self._last_mission_ack
+
+    async def _wait_for_mission_message(self, timeout: float) -> Optional[Any]:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                return self._mission_messages.get_nowait()
+            except queue.Empty:
+                await asyncio.sleep(0.05)
+        return None
 
     async def init_sitl_params(self) -> None:
         """
@@ -315,7 +515,7 @@ class PX4Adapter(BaseSimulatorAdapter):
         try:
             if self._autopilot_type == 3:  # ArduPilot
                 # ArduPilot GUIDED = mode 4
-                self._master.set_mode_send(self.target_system, 'GUIDED')
+                self._master.set_mode('GUIDED')
             else:
                 # PX4: use MAV_CMD_DO_SET_MODE with AUTO.LOITER (main_mode=5)
                 await self._send_command_long(
@@ -343,6 +543,10 @@ class PX4Adapter(BaseSimulatorAdapter):
             return False
 
         try:
+            with self._lock:
+                self._command_ack.pop(command, None)
+                self._last_command_ack = None
+                self._last_command_message = ""
             self._master.mav.command_long_send(
                 self.target_system,
                 self.target_component,
@@ -350,7 +554,25 @@ class PX4Adapter(BaseSimulatorAdapter):
                 0, # confirmation
                 param1, param2, param3, param4, param5, param6, param7
             )
-            return True
+            deadline = time.time() + 3.0
+            while time.time() < deadline:
+                with self._lock:
+                    result = self._command_ack.get(command)
+                if result is not None:
+                    accepted = result in (
+                        mavutil.mavlink.MAV_RESULT_ACCEPTED,
+                        mavutil.mavlink.MAV_RESULT_IN_PROGRESS,
+                    )
+                    if not accepted:
+                        logger.warning("[SIM] MAVLink command %s rejected with result %s", command, result)
+                    self._last_command_ack = result
+                    self._last_command_message = f"MAV_RESULT_{result}"
+                    return accepted
+                await asyncio.sleep(0.05)
+            logger.warning("[SIM] MAVLink command %s timed out waiting for COMMAND_ACK", command)
+            self._last_command_ack = None
+            self._last_command_message = "No COMMAND_ACK received before timeout"
+            return False
         except Exception as e:
             logger.error(f"[SIM] Error sending command {command}: {e}")
             return False
@@ -380,6 +602,10 @@ class PX4Adapter(BaseSimulatorAdapter):
                     self._handle_vfr_hud(msg, now)
                 elif msg_type == "GPS_RAW_INT":
                     self._handle_gps_raw(msg, now)
+                elif msg_type == "COMMAND_ACK":
+                    self._handle_command_ack(msg)
+                elif msg_type in ("MISSION_REQUEST_INT", "MISSION_REQUEST", "MISSION_ACK"):
+                    self._mission_messages.put(msg)
 
             except Exception as e:
                 if self._running:
@@ -389,9 +615,12 @@ class PX4Adapter(BaseSimulatorAdapter):
         with self._lock:
             self._last_heartbeat_time = now
             self._connected = True
+            self.target_system = int(msg.get_srcSystem())
+            self.target_component = int(msg.get_srcComponent())
             base_mode = getattr(msg, 'base_mode', 0)
             custom_mode = getattr(msg, 'custom_mode', 0)
             autopilot = getattr(msg, 'autopilot', 0)
+            self._vehicle_type = getattr(msg, 'type', None)
 
             # Cache autopilot type for mode decoding (3=ArduPilot, 12=PX4)
             if autopilot in (3, 12):
@@ -458,6 +687,12 @@ class PX4Adapter(BaseSimulatorAdapter):
         with self._lock:
             fix_type = getattr(msg, "fix_type", 0)
             self.telemetry.gps_status = "FIXED" if fix_type >= 3 else ("ACQUIRING" if fix_type == 2 else "NO_FIX")
-            self.telemetry.satellites = getattr(msg, "satellites_visible", 18)
-            self.telemetry.hdop = getattr(msg, "eph", 100) / 100.0
+            satellites = getattr(msg, "satellites_visible", -1)
+            eph = getattr(msg, "eph", -1)
+            self.telemetry.satellites = satellites if satellites >= 0 else None
+            self.telemetry.hdop = eph / 100.0 if eph >= 0 else None
             self.telemetry.last_packet_timestamp = now
+
+    def _handle_command_ack(self, msg) -> None:
+        with self._lock:
+            self._command_ack[int(msg.command)] = int(msg.result)

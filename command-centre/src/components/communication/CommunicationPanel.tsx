@@ -43,45 +43,53 @@ export const CommunicationPanel: React.FC = () => {
           </div>
         </div>
 
-        {/* Primary Link Metrics Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 font-mono mt-5">
-          <MetricCard
-            label="STATUS"
-            value={communication.status}
-            variant={communication.status === 'ACTIVE' ? 'cyan' : 'default'}
-          />
-          <MetricCard
-            label="PACKETS"
-            value={communication.packets}
-            subValue="Transmitted"
-            variant="cyan"
-          />
-          <MetricCard
-            label="DATA VOLUME"
-            value={formattedBytes(communication.bytes)}
-            subValue={`${communication.bytes.toLocaleString()} bytes`}
-            variant="emerald"
-          />
-          <MetricCard
-            label="TX DURATION"
-            value={communication.transmissionDurationSec}
-            unit="sec"
-            subValue="RF Radiating Time"
-            variant="amber"
-          />
-          <MetricCard
-            label="LAST TX TIME"
-            value={communication.lastTransmission.split(' ')[0] || '19:42:09'}
-            unit="UTC"
-            subValue="Most recent burst"
-          />
-          <MetricCard
-            label="PACKET TYPE"
-            value={communication.lastPacketType}
-            subValue="Payload format"
-            variant={communication.lastPacketType === 'EVENT' ? 'cyan' : 'default'}
-          />
-        </div>
+        {communication.status === 'OFFLINE' ? (
+          <div className="mt-5 rounded-xl border border-slate-800 bg-[#0a111b] p-5 text-center font-mono text-xs text-slate-400">
+            <div className="text-cyan-300 text-sm font-bold tracking-[0.2em]">COMMUNICATION CONTROLLER NOT CONNECTED</div>
+            <div className="mt-2 text-slate-400">No live mission-data link is available from the backend.</div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 font-mono mt-5">
+            <MetricCard
+              label="STATUS"
+              value={communication.status}
+              variant={communication.status === 'ACTIVE' ? 'cyan' : 'default'}
+            />
+            <MetricCard
+              label="PACKETS"
+              value={communication.packets}
+              subValue="Transmitted"
+              variant="cyan"
+            />
+            <MetricCard
+              label="DATA VOLUME"
+              value={formattedBytes(communication.bytes)}
+              subValue={`${communication.bytes.toLocaleString()} bytes`}
+              variant="emerald"
+            />
+            <MetricCard
+              label="TX DURATION"
+              value={communication.transmissionDurationSec}
+              unit="sec"
+              subValue="RF Radiating Time"
+              variant="amber"
+            />
+            <MetricCard
+              label="LAST TX TIME"
+              value={communication.lastTransmission === 'NO DATA' ? 'N/A' : communication.lastTransmission.split(' ')[0] || 'N/A'}
+              unit="UTC"
+              subValue="Most recent burst"
+            />
+            <MetricCard
+              label="PACKET TYPE"
+              value={communication.lastPacketType}
+              subValue="Payload format"
+              variant={communication.lastPacketType === 'EVENT' ? 'cyan' : 'default'}
+            />
+            <MetricCard label="RETAINED" value={communication.retainedEvents ?? 0} subValue="Local records" variant="amber" />
+            <MetricCard label="SUPPRESSED" value={communication.suppressedEvents ?? 0} subValue="No packet" variant="default" />
+          </div>
+        )}
       </div>
 
       {/* RF Signature & Stealth Meter */}

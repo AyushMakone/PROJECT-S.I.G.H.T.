@@ -29,6 +29,8 @@ class DetectionRequest(BaseModel):
     timestamp: str = Field(default_factory=lambda: time.strftime("%H:%M:%S UTC", time.gmtime()))
     frame_id: int = Field(default=0, alias="frameId")
     source: str = Field(default="VIRTUAL_DETECTOR", description="Detector backend identifier")
+    location_source: str = Field(default="UAV_POSITION", alias="locationSource")
+    target_geolocation_available: bool = Field(default=False, alias="targetGeolocationAvailable")
 
     model_config = {"populate_by_name": True}
 
@@ -52,22 +54,22 @@ class DetectionResponse(BaseModel):
 # ─────────────────────────────────────────────
 
 class TelemetryData(BaseModel):
-    lat: float = 28.7041
-    lng: float = 77.1025
-    altitude_m: float = 0.0
-    speed_mps: float = 0.0
-    heading_deg: float = 0.0
-    climb_rate_mps: float = 0.0
-    roll_deg: float = 0.0
-    pitch_deg: float = 0.0
-    yaw_deg: float = 0.0
-    battery_percent: float = 100.0
-    battery_voltage_v: float = 16.8
-    is_armed: bool = False
-    flight_mode: str = "STABILIZED"
-    current_waypoint: int = 0
-    total_waypoints: int = 0
-    timestamp_utc: str = ""
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    altitude_m: Optional[float] = None
+    speed_mps: Optional[float] = None
+    heading_deg: Optional[float] = None
+    climb_rate_mps: Optional[float] = None
+    roll_deg: Optional[float] = None
+    pitch_deg: Optional[float] = None
+    yaw_deg: Optional[float] = None
+    battery_percent: Optional[float] = None
+    battery_voltage_v: Optional[float] = None
+    is_armed: Optional[bool] = None
+    flight_mode: Optional[str] = None
+    current_waypoint: Optional[int] = None
+    total_waypoints: Optional[int] = None
+    timestamp_utc: Optional[str] = None
 
 
 # ─────────────────────────────────────────────
@@ -79,6 +81,8 @@ class PriorityZoneRequest(BaseModel):
     name: str
     polygon: List[Tuple[float, float]]
     description: Optional[str] = ""
+    priority: Literal["HIGH", "MEDIUM", "LOW"] = "HIGH"
+    active: bool = True
 
     model_config = {"populate_by_name": True}
 
@@ -89,6 +93,7 @@ class MissionCardRequest(BaseModel):
     uav_id: str = Field(default="SIGHT-UAV-01", alias="uavId")
     relevant_objects: List[str] = Field(default=["Person", "Vehicle"], alias="relevantObjects")
     persistence_frames: int = Field(default=2, alias="persistenceFrames")
+    waypoints: List[Dict[str, Any]] = Field(default_factory=list)
     priority_zones: List[PriorityZoneRequest] = Field(default_factory=list, alias="priorityZones")
     evidence: Literal["Enabled", "Disabled", "On-Demand"] = "Disabled"
     communication_policy: str = Field(default="EVENT ONLY", alias="communicationPolicy")
@@ -152,12 +157,12 @@ class HealthResponse(BaseModel):
 # ─────────────────────────────────────────────
 
 class ConnectSimulatorRequest(BaseModel):
-    mode: str = Field(default="online", description="'online' (LOS-Flight-Simulator), 'cloud', 'local', or 'fallback'")
+    mode: str = Field(default="local", description="'local' (real ArduPilot SITL via MAVProxy), 'cloud', or 'fallback'")
     host: Optional[str] = None
     port: Optional[int] = None
     endpoint: Optional[str] = None
-    simulator_url: Optional[str] = Field(default=None, description="Online Simulator Host URL (for mode='online')")
-    ws_url: Optional[str] = Field(default=None, description="Online Simulator WebSocket URL (for mode='online')")
+    simulator_url: Optional[str] = Field(default=None, description="Remote simulator host URL")
+    ws_url: Optional[str] = Field(default=None, description="Remote simulator websocket URL")
 
 
 
@@ -180,12 +185,21 @@ class FlightStatusResponse(BaseModel):
     status: str
     mode: str
     is_connected: bool
-    is_armed: bool
-    flight_mode: str
+    is_armed: Optional[bool]
+    flight_mode: Optional[str]
     link_status: str
-    battery_percent: float
-    altitude_m: float
-    lat: float
-    lng: float
+    battery_percent: Optional[float]
+    altitude_m: Optional[float]
+    lat: Optional[float]
+    lng: Optional[float]
     message: Optional[str] = None
+
+
+class FlightCommandResponse(BaseModel):
+    command: str
+    status: Literal["ACCEPTED", "REJECTED", "FAILED", "ACK_UNKNOWN"]
+    ack: Optional[str] = None
+    message: str
+    timestamp: str
+    target_altitude: Optional[float] = None
 

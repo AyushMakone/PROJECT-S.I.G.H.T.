@@ -14,13 +14,17 @@ export interface EvaluatedConditions {
 }
 
 export interface GovernorDecision {
-  decision: GovernorState;
+  decision: GovernorState | 'UNKNOWN';
   reason: string;
   action: string;
   evaluatedConditions: EvaluatedConditions;
   timestamp: string;
   targetId?: string;
   targetType?: ObjectClass;
+  objectClass?: ObjectClass;
+  class?: string;
+  zoneName?: string;
+  confidence?: number;
 }
 
 export interface MissionCard {
@@ -30,7 +34,8 @@ export interface MissionCard {
   relevantObjects: ObjectClass[];
   persistence: string; // e.g. "2 frames"
   persistenceFrames: number;
-  priorityZones: string[];
+  priorityZones: PriorityZone[];
+  waypoints?: Waypoint[];
   evidence: 'Enabled' | 'Disabled' | 'On-Demand';
   communicationPolicy: 'EVENT ONLY' | 'EVENT & EVIDENCE' | 'SILENT' | 'ADAPTIVE';
   batteryRthThreshold: string; // e.g. "20%"
@@ -59,6 +64,7 @@ export interface Waypoint {
   lat: number;
   lng: number;
   altitude: number;
+  acceptanceRadius?: number;
   sequence: number;
   isHome?: boolean;
   isPriorityZoneAnchor?: boolean;
@@ -70,11 +76,14 @@ export interface PriorityZone {
   polygon: [number, number][]; // Lat, Lng pairs
   fillColor?: string;
   description: string;
+  priority?: 'HIGH' | 'MEDIUM' | 'LOW';
+  active?: boolean;
 }
 
 export interface Detection {
   id: string;
   object: ObjectClass;
+  objectClass?: ObjectClass;
   confidence: number; // 0-100%
   timestamp: string;
   lat: number;
@@ -85,10 +94,19 @@ export interface Detection {
   persistence: number; // Frame count
   governorDecision: GovernorState;
   frameImageUrl?: string;
+  normBbox?: [number, number, number, number];
+  trackId?: number;
+  altitudeM?: number;
+  frameId?: number;
+  source?: string;
+  locationSource?: string;
+  targetGeolocationAvailable?: boolean;
 }
 
 export interface Telemetry {
+  hasTelemetry: boolean;
   altitude: number; // in meters (e.g. 84)
+  relativeAltitude?: number;
   speed: number; // in m/s (e.g. 12)
   heading: string; // e.g. "NE"
   headingDegrees: number; // 0-360
@@ -99,7 +117,10 @@ export interface Telemetry {
   hdop: number;
   lat: number;
   lng: number;
-  flightMode: 'AUTO_MISSION' | 'LOITER' | 'RETURN_TO_HOME' | 'MANUAL';
+  autopilot?: string | null;
+  vehicle?: string | null;
+  connectionState?: string | null;
+  flightMode: 'AUTO_MISSION' | 'LOITER' | 'RETURN_TO_HOME' | 'MANUAL' | string;
   linkStatus: 'ONLINE' | 'DEGRADED' | 'LOST';
   rssi: number; // -dBm
   pitch: number;
@@ -107,10 +128,14 @@ export interface Telemetry {
   yaw: number;
   climbRate: number; // m/s
   systemStatus: 'ONLINE' | 'STANDBY' | 'WARNING' | 'EMERGENCY';
+  isArmed?: boolean;
+  timestamp?: string;
+  armed?: boolean;
+    mode?: string;
 }
 
 export interface CommunicationStatus {
-  status: 'INACTIVE' | 'ACTIVE';
+  status: 'INACTIVE' | 'ACTIVE' | 'ONLINE' | 'OFFLINE';
   packets: number;
   bytes: number; // in bytes or KB display
   transmissionDurationSec: number;
@@ -120,6 +145,13 @@ export interface CommunicationStatus {
   snr: number; // dB
   dutyCyclePercent: number;
   rfSilencePercent: number;
+  packetsTransmitted?: number;
+  bytesTransmitted?: number;
+  eventsTransmitted?: number;
+  evidenceTransmitted?: number;
+  suppressedEvents?: number;
+  retainedEvents?: number;
+  linkAvailable?: boolean;
 }
 
 export interface MetricSummary {

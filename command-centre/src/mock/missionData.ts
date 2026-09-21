@@ -19,7 +19,7 @@ export const INITIAL_MISSION_CARD: MissionCard = {
   relevantObjects: ['Person', 'Vehicle'],
   persistence: '2 frames',
   persistenceFrames: 2,
-  priorityZones: ['Priority Zone Alpha (North Ridge)', 'Priority Zone Beta (East Gate)'],
+  priorityZones: [],
   evidence: 'Disabled',
   communicationPolicy: 'EVENT ONLY',
   batteryRthThreshold: '20%',
@@ -36,7 +36,7 @@ export const ALTERNATE_MISSION_CARDS: MissionCard[] = [
     relevantObjects: ['Vehicle', 'Person', 'Vessel'],
     persistence: '3 frames',
     persistenceFrames: 3,
-    priorityZones: ['Border Checkpoint Echo', 'River Crossing Sector 4'],
+    priorityZones: [],
     evidence: 'Enabled',
     communicationPolicy: 'EVENT & EVIDENCE',
     batteryRthThreshold: '25%',
@@ -50,7 +50,7 @@ export const ALTERNATE_MISSION_CARDS: MissionCard[] = [
     relevantObjects: ['Person', 'Vehicle', 'Aircraft'],
     persistence: '4 frames',
     persistenceFrames: 4,
-    priorityZones: ['Substation Perimeter Grid', 'Transformer Core Alpha'],
+    priorityZones: [],
     evidence: 'On-Demand',
     communicationPolicy: 'SILENT',
     batteryRthThreshold: '30%',
@@ -108,6 +108,7 @@ export const INITIAL_PRIORITY_ZONES: PriorityZone[] = [
 ];
 
 export const INITIAL_TELEMETRY: Telemetry = {
+  hasTelemetry: true,
   altitude: 84,
   speed: 12,
   heading: 'NE',

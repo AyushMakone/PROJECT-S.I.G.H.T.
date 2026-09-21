@@ -22,12 +22,12 @@ SimulatorConnectionState = ConnectionState
 
 class SimulatorState(BaseModel):
     status: ConnectionState = ConnectionState.OFFLINE
-    provider: str = "LOS-Flight-Simulator"
-    connection_type: str = "WebSocket / HTTP"
+    provider: str = "NOT_CONNECTED"
+    connection_type: str = "UNKNOWN"
     host_url: str = ""
     latency_ms: float = 0.0
     telemetry_frequency_hz: float = 0.0
     last_heartbeat_timestamp: Optional[str] = None
-    is_armed: bool = False
-    flight_mode: str = "DISARMED"
+    is_armed: Optional[bool] = None
+    flight_mode: Optional[str] = None
     message: Optional[str] = None

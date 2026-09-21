@@ -83,6 +83,14 @@ export const AIEventCard: React.FC<AIEventCardProps> = ({
           <span className="text-slate-400">Persistence:</span>
           <span className="font-bold text-slate-200">{detection.persistence} frames</span>
         </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-slate-400">Track:</span>
+          <span className="font-bold text-slate-200">{detection.trackId ?? 'N/A'}</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-slate-400">Location:</span>
+          <span className="font-bold text-slate-200">{detection.locationSource ?? 'UNAVAILABLE'}</span>
+        </div>
       </div>
 
       {/* Footer / Governor Decision Row */}

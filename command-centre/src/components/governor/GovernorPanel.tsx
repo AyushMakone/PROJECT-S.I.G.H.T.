@@ -77,7 +77,7 @@ export const GovernorPanel: React.FC = () => {
         </div>
         <div className="hidden md:flex flex-col items-end text-right font-mono">
           <span className="text-[10px] text-slate-400">GOVERNOR STATE MACHINE</span>
-          <span className="text-xs text-emerald-400 font-bold">ONLINE & AUTONOMOUS</span>
+          <span className="text-xs text-slate-400 font-bold">WAITING FOR GENUINE DETECTIONS</span>
         </div>
       </div>
 

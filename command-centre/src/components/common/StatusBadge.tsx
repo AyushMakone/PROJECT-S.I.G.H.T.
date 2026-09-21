@@ -1,6 +1,6 @@
 import React from 'react';
 
-export type BadgeVariant = 'emerald' | 'amber' | 'cyan' | 'crimson' | 'violet' | 'slate';
+export type BadgeVariant = 'emerald' | 'amber' | 'cyan' | 'red' | 'crimson' | 'violet' | 'slate';
 
 interface StatusBadgeProps {
   label: string;
@@ -22,6 +22,7 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
     amber: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
     cyan: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30',
     crimson: 'bg-red-500/10 text-red-400 border-red-500/30',
+    red: 'bg-red-500/10 text-red-400 border-red-500/30',
     violet: 'bg-purple-500/10 text-purple-400 border-purple-500/30',
     slate: 'bg-slate-500/10 text-slate-400 border-slate-500/30'
   };
@@ -31,6 +32,7 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
     amber: 'bg-amber-400',
     cyan: 'bg-cyan-400',
     crimson: 'bg-red-400',
+    red: 'bg-red-400',
     violet: 'bg-purple-400',
     slate: 'bg-slate-400'
   };

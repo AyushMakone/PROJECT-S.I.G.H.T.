@@ -26,6 +26,8 @@ export const Simulator: React.FC = () => {
     telemetry,
     governor,
     detections,
+    detectorStatus,
+    cameraStatus,
     priorityZones,
     connectionStatus,
     simulatorMode,
@@ -39,7 +41,8 @@ export const Simulator: React.FC = () => {
     hover,
     move,
     setHeading,
-    returnToHome
+    returnToHome,
+    commandLog
   } = useSimulation();
 
   const [selectedMode, setSelectedMode] = useState<'local' | 'cloud' | 'fallback'>(
@@ -48,7 +51,7 @@ export const Simulator: React.FC = () => {
       : 'local'
   );
   const [takeoffAlt, setTakeoffAlt] = useState<number>(15.0);
-  const [actionLog, setActionLog] = useState<string>('[SIM] Ready — connect to ArduPilot SITL (tcp:127.0.0.1:5760) or select mode.');
+  const [actionLog, setActionLog] = useState<string>('[SIM] Ready — connect to ArduPilot SITL UDP:172.30.16.1:14550 or select mode.');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
 
   const handleConnect = async () => {
@@ -75,42 +78,47 @@ export const Simulator: React.FC = () => {
   };
 
   const handleArm = async () => {
+    if (typeof window !== 'undefined' && !window.confirm('ARM the UAV?')) return;
     setIsProcessing(true);
     setActionLog('[SIM] → ARM command (MAV_CMD_COMPONENT_ARM_DISARM)...');
     const res = await arm();
-    setActionLog(`[SIM] ARM: ${res.status}`);
+    setActionLog(`[SIM] ARM — ${res.status}${res.message ? `: ${res.message}` : ''}`);
     setIsProcessing(false);
   };
 
   const handleDisarm = async () => {
+    if (typeof window !== 'undefined' && !window.confirm('DISARM the UAV?')) return;
     setIsProcessing(true);
     setActionLog('[SIM] → DISARM command...');
     const res = await disarm();
-    setActionLog(`[SIM] DISARM: ${res.status}`);
+    setActionLog(`[SIM] DISARM — ${res.status}${res.message ? `: ${res.message}` : ''}`);
     setIsProcessing(false);
   };
 
   const handleTakeoff = async () => {
+    if (typeof window !== 'undefined' && !window.confirm(`TAKEOFF to ${takeoffAlt}m?`)) return;
     setIsProcessing(true);
     setActionLog(`[SIM] → TAKEOFF ${takeoffAlt}m (MAV_CMD_NAV_TAKEOFF)...`);
     const res = await takeoff(takeoffAlt);
-    setActionLog(`[SIM] TAKEOFF: ${res.status}`);
+    setActionLog(`[SIM] TAKEOFF ${takeoffAlt}m — ${res.status}${res.message ? `: ${res.message}` : ''}`);
     setIsProcessing(false);
   };
 
   const handleLand = async () => {
+    if (typeof window !== 'undefined' && !window.confirm('LAND the UAV now?')) return;
     setIsProcessing(true);
     setActionLog('[SIM] → LAND command (MAV_CMD_NAV_LAND)...');
     const res = await land();
-    setActionLog(`[SIM] LAND: ${res.status}`);
+    setActionLog(`[SIM] LAND — ${res.status}${res.message ? `: ${res.message}` : ''}`);
     setIsProcessing(false);
   };
 
   const handleHover = async () => {
+    if (typeof window !== 'undefined' && !window.confirm('HOVER / LOITER the UAV at the current position?')) return;
     setIsProcessing(true);
     setActionLog('[SIM] → HOVER / LOITER hold position...');
     const res = await hover();
-    setActionLog(`[SIM] HOVER: ${res.status}`);
+    setActionLog(`[SIM] LOITER — ${res.status}${res.message ? `: ${res.message}` : ''}`);
     setIsProcessing(false);
   };
 
@@ -120,32 +128,34 @@ export const Simulator: React.FC = () => {
   };
 
   const handleSetHeading = async (hdg: number) => {
+    if (typeof window !== 'undefined' && !window.confirm(`ALIGN heading to ${hdg}°?`)) return;
     setActionLog(`[SIM] → HEADING ${hdg}° (MAV_CMD_CONDITION_YAW)`);
     const res = await setHeading(hdg);
-    setActionLog(`[SIM] HEADING: ${res.status}`);
+    setActionLog(`[SIM] HEADING — ${res.status}${res.message ? `: ${res.message}` : ''}`);
   };
 
   const handleRth = async () => {
+    if (typeof window !== 'undefined' && !window.confirm('RETURN TO HOME now?')) return;
     setIsProcessing(true);
     setActionLog('[SIM] → RETURN TO HOME (MAV_CMD_NAV_RETURN_TO_LAUNCH)...');
     const res = await returnToHome();
-    setActionLog(`[SIM] RTH: ${res.status}`);
+    setActionLog(`[SIM] RTL — ${res.status}${res.message ? `: ${res.message}` : ''}`);
     setIsProcessing(false);
   };
 
-  const isOnline = connectionStatus === 'TELEMETRY ACTIVE' || connectionStatus === 'CONNECTED';
-  const isConnecting = connectionStatus === 'CONNECTING';
+  const isOnline = connectionStatus === 'LIVE';
+  const hasLiveTelemetry = telemetry.hasTelemetry && isOnline;
 
   const getStatusVariant = () => {
     if (isOnline) return 'emerald';
-    if (isConnecting) return 'amber';
+    if (connectionStatus === 'STALE') return 'amber';
     if (connectionStatus.includes('LOST')) return 'red';
     return 'slate';
   };
 
   const getModeLabel = (mode: string) => {
     switch (mode) {
-      case 'local':    return 'ArduPilot SITL (TCP:5760)';
+      case 'local':    return 'ArduPilot SITL (UDP:172.30.16.1:14550)';
       case 'cloud':    return 'Cloud PX4 SITL (UDP:14550)';
       case 'fallback': return 'Fallback Fixture (Dev Only)';
       default:         return 'UNKNOWN';
@@ -212,7 +222,7 @@ export const Simulator: React.FC = () => {
                 : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
             }`}
           >
-            ⬡ Local SITL (MAVLink TCP:5760)
+            ⬡ Local SITL (MAVLink UDP:172.30.16.1:14550)
           </button>
 
           {/* Cloud PX4 SITL */}
@@ -298,12 +308,14 @@ export const Simulator: React.FC = () => {
               <Crosshair className="w-4 h-4 text-cyan-400" />
               Simulator Camera Frame + Edge AI
             </span>
-            <span className="text-emerald-400">YOLO PIPELINE</span>
+            <span className="text-slate-500">EDGE AI: NOT CONNECTED</span>
           </div>
           <CameraFeed
             telemetry={telemetry}
             detections={detections}
             governor={governor}
+            detectorStatus={detectorStatus}
+            cameraStatus={cameraStatus}
             height="460px"
           />
         </div>
@@ -319,8 +331,8 @@ export const Simulator: React.FC = () => {
               MAVLink Flight Control Deck
             </span>
             <span className="text-[11px] text-cyan-400 font-bold">
-              AUTOPILOT: {telemetry.flightMode || 'DISARMED'}
-              {telemetry.isArmed ? ' · ARMED' : ' · DISARMED'}
+              AUTOPILOT: {hasLiveTelemetry && telemetry.autopilot ? telemetry.autopilot : 'NO DATA'}
+              {hasLiveTelemetry ? (telemetry.isArmed ? ' · ARMED' : ' · DISARMED') : ' · ARMED: NO DATA'}
             </span>
           </div>
 
@@ -330,7 +342,7 @@ export const Simulator: React.FC = () => {
               <button
                 id="flight-arm-btn"
                 onClick={handleArm}
-                disabled={isProcessing}
+                disabled={isProcessing || !isOnline}
                 className="px-4 py-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/40 text-xs font-bold transition-colors flex items-center gap-2"
               >
                 <ShieldCheck className="w-4 h-4" /> ARM UAV
@@ -339,7 +351,7 @@ export const Simulator: React.FC = () => {
               <button
                 id="flight-disarm-btn"
                 onClick={handleDisarm}
-                disabled={isProcessing}
+                disabled={isProcessing || !isOnline || telemetry.isArmed !== true}
                 className="px-4 py-2 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/40 text-xs font-bold transition-colors flex items-center gap-2"
               >
                 <ShieldAlert className="w-4 h-4" /> DISARM
@@ -364,7 +376,7 @@ export const Simulator: React.FC = () => {
               <button
                 id="flight-takeoff-btn"
                 onClick={handleTakeoff}
-                disabled={isProcessing}
+                disabled={isProcessing || !isOnline || telemetry.isArmed !== true}
                 className="px-3 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-slate-900 font-bold text-xs transition-colors flex items-center gap-1.5"
               >
                 <ArrowUp className="w-3.5 h-3.5" /> Takeoff
@@ -375,7 +387,7 @@ export const Simulator: React.FC = () => {
             <button
               id="flight-hover-btn"
               onClick={handleHover}
-              disabled={isProcessing}
+              disabled={isProcessing || !isOnline}
               className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs border border-slate-700 transition-colors flex items-center gap-1.5"
             >
               <Pause className="w-3.5 h-3.5" /> Hover / Loiter
@@ -385,7 +397,7 @@ export const Simulator: React.FC = () => {
             <button
               id="flight-land-btn"
               onClick={handleLand}
-              disabled={isProcessing}
+              disabled={isProcessing || !isOnline}
               className="px-4 py-2 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/40 text-xs font-bold transition-colors flex items-center gap-1.5"
             >
               <ArrowDown className="w-3.5 h-3.5" /> Land
@@ -395,7 +407,7 @@ export const Simulator: React.FC = () => {
             <button
               id="flight-rth-btn"
               onClick={handleRth}
-              disabled={isProcessing}
+              disabled={isProcessing || !isOnline}
               className="px-4 py-2 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 text-xs font-bold transition-colors flex items-center gap-1.5"
             >
               <Home className="w-3.5 h-3.5" /> Return To Home
@@ -413,8 +425,9 @@ export const Simulator: React.FC = () => {
                   key={deg}
                   id={`heading-btn-${deg}`}
                   onClick={() => handleSetHeading(deg)}
+                  disabled={isProcessing || !isOnline}
                   className={`px-2 py-1 rounded text-[11px] border transition-colors ${
-                    Math.abs(Math.round(telemetry.headingDegrees) - deg) < 5
+                    hasLiveTelemetry && Math.abs(Math.round(telemetry.headingDegrees) - deg) < 5
                       ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40 font-bold'
                       : 'bg-slate-900 text-slate-400 hover:text-slate-200 border-slate-800'
                   }`}
@@ -426,9 +439,15 @@ export const Simulator: React.FC = () => {
           </div>
 
           {/* Action Log */}
-          <div className="p-3 rounded-lg bg-[#060a12] border border-slate-800/80 text-xs text-cyan-300 flex items-center gap-2">
-            <ChevronRight className="w-3.5 h-3.5 shrink-0 text-cyan-400" />
-            <span className="font-mono">{actionLog}</span>
+          <div className="p-3 rounded-lg bg-[#060a12] border border-slate-800/80 text-xs text-cyan-300 space-y-1.5">
+            <div className="flex items-center gap-2"><ChevronRight className="w-3.5 h-3.5 shrink-0 text-cyan-400" /><span className="font-mono">{actionLog}</span></div>
+            {commandLog.slice(-5).reverse().map((entry, index) => (
+              <div key={`${entry.timestamp}-${entry.command}-${index}`} className="flex items-center gap-2 border-t border-slate-800/70 pt-1.5 font-mono text-[11px]">
+                <span className="text-slate-500">{entry.timestamp}</span>
+                <span className="text-slate-200">{entry.command}</span>
+                <span className={entry.status === 'ACCEPTED' ? 'text-emerald-400' : 'text-amber-400'}>{entry.status}</span>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -445,17 +464,19 @@ export const Simulator: React.FC = () => {
           </div>
           <div className="space-y-2 text-xs">
             {[
-              { label: 'Autopilot', value: simulatorMode === 'local' ? 'ArduPilot SITL' : simulatorMode === 'cloud' ? 'PX4 SITL (Cloud)' : 'Fallback Fixture', color: 'text-cyan-400' },
-              { label: 'Position', value: `${(telemetry.lat || 0).toFixed(5)}°, ${(telemetry.lng || 0).toFixed(5)}°` },
-              { label: 'Altitude AGL', value: `${telemetry.altitude || 0} m`, color: 'text-cyan-400' },
-              { label: 'Ground Speed', value: `${telemetry.speed || 0} m/s` },
-              { label: 'Climb Rate', value: `${telemetry.climbRate > 0 ? '+' : ''}${telemetry.climbRate || 0} m/s` },
-              { label: 'Heading', value: `${telemetry.heading || '0.0°'} (${telemetry.headingDegrees || 0}°)` },
-              { label: 'Attitude R/P/Y', value: `${telemetry.roll || 0}° / ${telemetry.pitch || 0}° / ${telemetry.yaw || 0}°` },
-              { label: 'Battery', value: telemetry.battery != null ? `${telemetry.battery}% (${telemetry.batteryVoltage}V)` : 'N/A', color: telemetry.battery != null && telemetry.battery < 25 ? 'text-red-400' : 'text-emerald-400' },
-              { label: 'GPS', value: `${telemetry.gpsStatus || 'NO_FIX'} (${telemetry.gpsSatellites || 0} Sats)` },
-              { label: 'Flight Mode', value: telemetry.flightMode || 'DISARMED', color: telemetry.isArmed ? 'text-emerald-400' : 'text-slate-400' },
-              { label: 'Last Telemetry', value: lastTelemetryTimestamp || telemetry.timestamp || 'WAITING', color: 'text-slate-500' },
+              { label: 'Autopilot', value: hasLiveTelemetry && telemetry.autopilot ? telemetry.autopilot : 'NO DATA', color: 'text-cyan-400' },
+              { label: 'Vehicle', value: hasLiveTelemetry && telemetry.vehicle ? telemetry.vehicle : 'NO DATA', color: 'text-cyan-400' },
+              { label: 'Connection', value: telemetry.connectionState || 'NO DATA', color: 'text-cyan-400' },
+              { label: 'Position', value: hasLiveTelemetry ? `${telemetry.lat.toFixed(5)}°, ${telemetry.lng.toFixed(5)}°` : 'NO DATA' },
+              { label: 'Altitude AGL', value: hasLiveTelemetry ? `${telemetry.relativeAltitude ?? 'N/A'} m` : 'NO DATA', color: 'text-cyan-400' },
+              { label: 'Ground Speed', value: hasLiveTelemetry ? `${telemetry.speed} m/s` : 'NO DATA' },
+              { label: 'Climb Rate', value: hasLiveTelemetry ? `${telemetry.climbRate > 0 ? '+' : ''}${telemetry.climbRate} m/s` : 'NO DATA' },
+              { label: 'Heading', value: hasLiveTelemetry ? `${telemetry.heading} (${telemetry.headingDegrees}°)` : 'NO DATA' },
+              { label: 'Attitude R/P/Y', value: hasLiveTelemetry ? `${telemetry.roll}° / ${telemetry.pitch}° / ${telemetry.yaw}°` : 'NO DATA' },
+              { label: 'Battery', value: hasLiveTelemetry ? `${telemetry.battery}% (${telemetry.batteryVoltage}V)` : 'NO DATA', color: hasLiveTelemetry && telemetry.battery < 25 ? 'text-red-400' : 'text-emerald-400' },
+              { label: 'GPS', value: hasLiveTelemetry ? `${telemetry.gpsStatus} (${telemetry.gpsSatellites} Sats)` : 'NO DATA' },
+              { label: 'Flight Mode', value: hasLiveTelemetry ? telemetry.flightMode : 'NO DATA', color: telemetry.isArmed ? 'text-emerald-400' : 'text-slate-400' },
+              { label: 'Last Telemetry', value: lastTelemetryTimestamp || telemetry.timestamp || 'NO DATA', color: 'text-slate-500' },
             ].map(({ label, value, color }) => (
               <div key={label} className="flex justify-between py-1 border-b border-slate-800/50">
                 <span className="text-slate-400">{label}:</span>

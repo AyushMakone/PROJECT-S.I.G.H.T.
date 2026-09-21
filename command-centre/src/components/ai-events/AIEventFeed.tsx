@@ -102,8 +102,10 @@ export const AIEventFeed: React.FC = () => {
             ))}
 
             {filteredDetections.length === 0 && (
-              <div className="text-center py-12 bg-[#0b1019] rounded-xl border border-slate-800 text-slate-400 font-mono text-xs">
-                NO DETECTIONS MATCHING SELECTED FILTERS
+              <div className="text-center py-12 bg-[#0b1019] rounded-xl border border-slate-800 text-slate-400 font-mono text-xs space-y-3">
+                <div className="text-cyan-300 text-sm font-bold tracking-[0.2em]">NO LIVE EDGE-AI EVENTS</div>
+                <div className="text-slate-400">Edge AI pipeline not connected.</div>
+                <div className="text-slate-500">No real detection stream is currently available from the backend.</div>
               </div>
             )}
           </div>

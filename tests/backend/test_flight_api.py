@@ -51,13 +51,14 @@ def test_flight_command_lifecycle():
     # 2. Arm
     arm_res = client.post("/api/v1/flight/arm")
     assert arm_res.status_code == 200
-    assert arm_res.json()["status"] == "ARMED"
+    assert arm_res.json()["status"] == "ACCEPTED"
+    assert arm_res.json()["command"] == "ARM"
 
     # 3. Takeoff
     takeoff_res = client.post("/api/v1/flight/takeoff", json={"altitude": 20.0})
     assert takeoff_res.status_code == 200
-    assert takeoff_res.json()["status"] == "TAKEOFF_COMMANDED"
-    assert takeoff_res.json()["altitude_m"] == 20.0
+    assert takeoff_res.json()["status"] == "ACCEPTED"
+    assert takeoff_res.json()["target_altitude"] == 20.0
 
     # 4. Move
     move_res = client.post("/api/v1/flight/move", json={"vx": 5.0, "vy": 0.0, "vz": 0.0, "yaw_rate": 0.0})
@@ -67,27 +68,85 @@ def test_flight_command_lifecycle():
     # 5. Heading
     hdg_res = client.post("/api/v1/flight/heading", json={"heading": 180.0})
     assert hdg_res.status_code == 200
-    assert hdg_res.json()["status"] == "HEADING_COMMANDED"
-    assert hdg_res.json()["heading"] == 180.0
+    assert hdg_res.json()["status"] == "ACCEPTED"
+    assert hdg_res.json()["command"] == "HEADING"
 
     # 6. Hover
     hover_res = client.post("/api/v1/flight/hover")
     assert hover_res.status_code == 200
-    assert hover_res.json()["status"] == "HOVER_COMMANDED"
+    assert hover_res.json()["status"] == "ACCEPTED"
 
     # 7. Land
     land_res = client.post("/api/v1/flight/land")
     assert land_res.status_code == 200
-    assert land_res.json()["status"] == "LAND_COMMANDED"
+    assert land_res.json()["status"] == "ACCEPTED"
 
     # 8. RTH
     rth_res = client.post("/api/v1/flight/rth")
     assert rth_res.status_code == 200
-    assert rth_res.json()["status"] == "RTH_COMMANDED"
+    assert rth_res.json()["status"] == "ACCEPTED"
 
     # 9. Disarm
     disarm_res = client.post("/api/v1/flight/disarm")
     assert disarm_res.status_code == 200
+
+
+def test_takeoff_requires_telemetry_confirmed_arm():
+    client = TestClient(app)
+    client.post("/api/v1/flight/connect", json={"mode": "fallback"})
+
+    response = client.post("/api/v1/flight/takeoff", json={"altitude": 10.0})
+
+    assert response.status_code == 409
+    assert "LANDED" in response.json()["detail"]
+
+
+def test_mission_upload_rejects_empty_authoritative_mission():
+    client = TestClient(app)
+    client.post("/api/v1/flight/connect", json={"mode": "fallback"})
+
+    response = client.post("/api/v1/mission/upload")
+
+    assert response.status_code == 422
+    assert response.json()["status"] == "REJECTED"
+    assert response.json()["message"] == "No waypoints defined"
+
+
+def test_flight_status_for_active_local_ardupilot_runtime_is_not_cloud():
+    from backend.main import _init_adapter
+
+    _init_adapter(mode="local", endpoint="udp:172.30.16.1:14550")
+    client = TestClient(app)
+    response = client.get("/api/v1/flight/status")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["mode"] == "local"
+    assert "cloud" not in payload["message"].lower()
+    assert payload["is_connected"] in (True, False)
+
+
+def test_flight_status_for_explicit_cloud_runtime_reports_cloud():
+    from backend.main import _init_adapter
+
+    _init_adapter(mode="cloud", host="cloud.example", port=14550, endpoint="udpout:cloud.example:14550")
+    client = TestClient(app)
+    response = client.get("/api/v1/flight/status")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["mode"] == "cloud"
+    assert "cloud" in payload["message"].lower()
+
+
+def test_flight_status_for_explicit_fallback_runtime_reports_fallback():
+    from backend.main import _init_adapter
+
+    _init_adapter(mode="fallback")
+    client = TestClient(app)
+    response = client.get("/api/v1/flight/status")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["mode"] == "fallback"
+    assert "fallback" in payload["message"].lower()
 
 
 def test_websocket_telemetry_stream():

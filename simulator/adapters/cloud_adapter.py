@@ -32,14 +32,21 @@ class CloudAdapter(PX4Adapter):
         self.port = port or int(os.getenv("SIMULATOR_PORT", "14550"))
         self.camera_url = camera_url or os.getenv("CAMERA_URL", "")
 
-        # Default cloud endpoint: TCP or UDP to remote host
-        endpoint = mavlink_endpoint or os.getenv("MAVLINK_ENDPOINT")
-        if not endpoint:
-            # If a remote IP or hostname is specified, default to UDP or TCP connection
-            if self.host in ["127.0.0.1", "localhost", "0.0.0.0"]:
-                endpoint = f"udpin:0.0.0.0:{self.port}"
-            else:
-                endpoint = f"udpout:{self.host}:{self.port}"
+        # Explicit cloud host/port should always win over any ambient MAVLINK_ENDPOINT
+        # environment value. This prevents the local ArduPilot SITL route from being
+        # mistakenly reused when the code is intentionally connecting to a remote cloud host.
+        if mavlink_endpoint is not None:
+            endpoint = mavlink_endpoint
+        elif host is not None or port is not None:
+            endpoint = f"udpout:{self.host}:{self.port}"
+        else:
+            endpoint = os.getenv("MAVLINK_ENDPOINT")
+            if not endpoint:
+                # If a remote IP or hostname is specified, default to UDP or TCP connection
+                if self.host in ["127.0.0.1", "localhost", "0.0.0.0"]:
+                    endpoint = f"udpin:0.0.0.0:{self.port}"
+                else:
+                    endpoint = f"udpout:{self.host}:{self.port}"
 
         super().__init__(connection_string=endpoint)
         self._round_trip_latency_ms = 0.0

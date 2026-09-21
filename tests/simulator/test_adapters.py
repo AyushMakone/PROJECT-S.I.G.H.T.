@@ -66,6 +66,61 @@ def test_cloud_adapter_configuration():
     assert "192.168.1.100:14550" in cloud.connection_string
 
 
+def test_udp_endpoint_mode_selection_matches_live_mavproxy_topology():
+    assert PX4Adapter._udp_input_mode("udp:172.30.16.1:14550") is True
+    assert PX4Adapter._udp_input_mode("udpin:0.0.0.0:14550") is True
+    assert PX4Adapter._udp_input_mode("udpout:172.30.16.1:14550") is False
+
+
+@pytest.mark.asyncio
+async def test_px4_adapter_move_sends_body_ned_velocity_pulse_and_stops():
+    from types import SimpleNamespace
+    from simulator.adapters.px4_adapter import PX4Adapter
+
+    adapter = PX4Adapter(connection_string="udp:172.30.16.1:14550")
+    sent_packets = []
+
+    class FakeMav:
+        def set_position_target_local_ned_send(self, *args):
+            sent_packets.append(args)
+
+    adapter._master = SimpleNamespace(mav=FakeMav())
+    adapter._move_duration_s = 0.25
+    adapter._move_interval_s = 0.05
+
+    ok = await adapter.move(vx=1.5, vy=2.0, vz=-0.5, yaw_rate=30.0)
+
+    assert ok is True
+    assert len(sent_packets) >= 2
+    first = sent_packets[0]
+    assert first[3] == 8  # MAV_FRAME_BODY_NED
+    assert first[8] == pytest.approx(1.5)
+    assert first[9] == pytest.approx(2.0)
+    assert first[10] == pytest.approx(-0.5)
+    assert sent_packets[-1][8] == pytest.approx(0.0)
+    assert sent_packets[-1][9] == pytest.approx(0.0)
+    assert sent_packets[-1][10] == pytest.approx(0.0)
+
+
+@pytest.mark.asyncio
+async def test_px4_adapter_move_rejects_non_finite_and_absurd_values():
+    from types import SimpleNamespace
+    from simulator.adapters.px4_adapter import PX4Adapter
+
+    adapter = PX4Adapter(connection_string="udp:172.30.16.1:14550")
+
+    class FakeMav:
+        def set_position_target_local_ned_send(self, *args):
+            return None
+
+    adapter._master = SimpleNamespace(mav=FakeMav())
+
+    assert await adapter.move(float("nan"), 0.0, 0.0, 0.0) is False
+    assert await adapter.move(float("inf"), 0.0, 0.0, 0.0) is False
+    assert await adapter.move(99.0, 0.0, 0.0, 0.0) is False
+    assert await adapter.move(0.0, 0.0, 0.0, 0.0) is True
+
+
 def test_telemetry_model_schema_conversion():
     telem = SimulatorTelemetry(
         latitude=34.0522,

@@ -37,32 +37,36 @@ class TelemetryAdapter:
         }
         """
         headings = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
-        hdg_idx = int(((raw.get("heading_deg", 0.0) + 22.5) % 360) / 45)
-        heading_str = headings[hdg_idx]
+        heading_deg = raw.get("heading_deg")
+        if heading_deg is None:
+            heading_str = None
+        else:
+            hdg_idx = int(((heading_deg + 22.5) % 360) / 45)
+            heading_str = headings[hdg_idx]
 
-        is_armed = raw.get("is_armed", False)
-        batt = raw.get("battery_percent", 100.0)
+        is_armed = raw.get("is_armed")
+        batt = raw.get("battery_percent")
 
         return {
-            "altitude": raw.get("altitude_m", 0.0),
-            "speed": raw.get("speed_mps", 0.0),
+            "altitude": raw.get("altitude_m"),
+            "speed": raw.get("speed_mps"),
             "heading": heading_str,
-            "headingDegrees": raw.get("heading_deg", 0.0),
+            "headingDegrees": heading_deg,
             "battery": batt,
-            "batteryVoltage": raw.get("battery_voltage_v", 24.6),
-            "gpsStatus": "FIXED" if is_armed or raw.get("altitude_m", 0) > 0 else "ACQUIRING",
-            "gpsSatellites": 18,
-            "hdop": 0.75,
-            "lat": raw.get("lat", 34.0522),
-            "lng": raw.get("lng", -117.8247),
-            "flightMode": raw.get("flight_mode", "DISARMED"),
-            "linkStatus": "ONLINE",
-            "rssi": -65,
-            "pitch": raw.get("pitch_deg", 0.0),
-            "roll": raw.get("roll_deg", 0.0),
-            "yaw": raw.get("yaw_deg", 0.0),
-            "climbRate": raw.get("climb_rate_mps", 0.0),
-            "systemStatus": "WARNING" if batt < 20 else "ONLINE"
+            "batteryVoltage": raw.get("battery_voltage_v"),
+            "gpsStatus": raw.get("gps_status") or "UNKNOWN",
+            "gpsSatellites": raw.get("gps_satellites"),
+            "hdop": raw.get("hdop"),
+            "lat": raw.get("lat"),
+            "lng": raw.get("lng"),
+            "flightMode": raw.get("flight_mode"),
+            "linkStatus": raw.get("link_status") or "ONLINE",
+            "rssi": raw.get("rssi_dbm"),
+            "pitch": raw.get("pitch_deg"),
+            "roll": raw.get("roll_deg"),
+            "yaw": raw.get("yaw_deg"),
+            "climbRate": raw.get("climb_rate_mps"),
+            "systemStatus": "WARNING" if batt is not None and batt < 20 else (raw.get("system_status") or "UNKNOWN")
         }
 
     @staticmethod

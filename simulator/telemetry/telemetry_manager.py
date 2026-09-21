@@ -71,6 +71,9 @@ class TelemetryManager:
         while self._running:
             start_t = time.time()
             try:
+                if not self.adapter.is_connected:
+                    await asyncio.sleep(self._interval)
+                    continue
                 telem = await self.adapter.get_telemetry()
                 self._latest_telemetry = telem
                 self._last_update_time = start_t

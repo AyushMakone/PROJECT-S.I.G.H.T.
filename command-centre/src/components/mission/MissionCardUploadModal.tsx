@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
+import { useSimulation } from '../../hooks/useSimulation';
 import { MissionCard } from '../../types';
-import { ALTERNATE_MISSION_CARDS } from '../../mock/missionData';
 import { Upload, X, Check, FileJson } from 'lucide-react';
 
 interface MissionCardUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onApply: (card: MissionCard) => void;
+  onApply: (card: MissionCard) => Promise<void>;
   currentCard: MissionCard;
 }
 
@@ -16,17 +16,11 @@ export const MissionCardUploadModal: React.FC<MissionCardUploadModalProps> = ({
   onApply,
   currentCard
 }) => {
-  const [selectedPreset, setSelectedPreset] = useState<string>(currentCard.missionId);
+  const { missionSaveState, missionSaveError } = useSimulation();
   const [jsonText, setJsonText] = useState<string>(JSON.stringify(currentCard, null, 2));
   const [error, setError] = useState<string | null>(null);
 
   if (!isOpen) return null;
-
-  const handleSelectPreset = (card: MissionCard) => {
-    setSelectedPreset(card.missionId);
-    setJsonText(JSON.stringify(card, null, 2));
-    setError(null);
-  };
 
   const handleJsonChange = (val: string) => {
     setJsonText(val);
@@ -38,15 +32,19 @@ export const MissionCardUploadModal: React.FC<MissionCardUploadModalProps> = ({
     }
   };
 
-  const handleApply = () => {
+  const handleApply = async () => {
     try {
       const parsed: MissionCard = JSON.parse(jsonText);
       if (!parsed.missionId || !parsed.objective) {
         setError('Missing required missionId or objective fields.');
         return;
       }
-      onApply(parsed);
-      onClose();
+      try {
+        await onApply(parsed);
+        onClose();
+      } catch {
+        // The provider owns and exposes the authoritative save error.
+      }
     } catch (e) {
       setError('Cannot parse JSON mission card.');
     }
@@ -73,29 +71,6 @@ export const MissionCardUploadModal: React.FC<MissionCardUploadModalProps> = ({
 
         {/* Modal Content */}
         <div className="p-5 space-y-4 overflow-y-auto flex-1 font-mono text-xs">
-          {/* Presets Selector */}
-          <div>
-            <label className="text-slate-400 uppercase tracking-wider text-[11px] block mb-2 font-bold">
-              Select Preset Scenario:
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              {ALTERNATE_MISSION_CARDS.map((card) => (
-                <button
-                  key={card.missionId}
-                  onClick={() => handleSelectPreset(card)}
-                  className={`p-2.5 rounded-lg border text-left transition-all ${
-                    selectedPreset === card.missionId
-                      ? 'bg-cyan-950/40 border-cyan-500/80 text-cyan-300'
-                      : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200'
-                  }`}
-                >
-                  <div className="font-bold">{card.missionId}</div>
-                  <div className="text-[10px] text-slate-400 mt-1 truncate">{card.objective}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-
           {/* JSON Editor / Preview */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
@@ -118,8 +93,8 @@ export const MissionCardUploadModal: React.FC<MissionCardUploadModalProps> = ({
 
         {/* Modal Footer */}
         <div className="flex items-center justify-between px-5 py-3.5 border-t border-slate-800 bg-[#080d15]">
-          <span className="text-[11px] text-slate-400 font-mono">
-            Modifies active S.I.G.H.T. Mission state in real time
+                <span className={`text-[11px] font-mono ${missionSaveError ? 'text-red-400' : missionSaveState === 'SAVED' ? 'text-emerald-400' : 'text-slate-400'}`}>
+              {missionSaveState === 'SAVING' ? 'Saving mission to backend...' : missionSaveState === 'SAVED' ? 'Mission saved.' : missionSaveError ? missionSaveError : 'Saves the active S.I.G.H.T. mission configuration'}
           </span>
           <div className="flex items-center gap-2 font-mono">
             <button
@@ -130,11 +105,11 @@ export const MissionCardUploadModal: React.FC<MissionCardUploadModalProps> = ({
             </button>
             <button
               onClick={handleApply}
-              disabled={!!error}
+              disabled={!!error || missionSaveState === 'SAVING'}
               className="flex items-center gap-1.5 px-4 py-1.5 rounded bg-cyan-500 text-slate-950 font-bold hover:bg-cyan-400 disabled:opacity-50 text-xs transition-colors shadow-md shadow-cyan-500/20"
             >
               <Check className="w-3.5 h-3.5" />
-              Apply Mission Card
+              {missionSaveState === 'SAVING' ? 'Saving...' : 'Apply Mission Card'}
             </button>
           </div>
         </div>

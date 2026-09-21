@@ -24,6 +24,8 @@ export const ThreeDViewer: React.FC<ThreeDViewerProps> = ({
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
+  const referenceRef = useRef<{ lat: number; lng: number } | null>(null);
+  const telemetryArmedRef = useRef<boolean>(false);
 
   const [cameraMode, setCameraMode] = useState<'chase' | 'orbit' | 'gimbal'>('chase');
   const [controlActive, setControlActive] = useState<boolean>(false);
@@ -194,7 +196,7 @@ export const ThreeDViewer: React.FC<ThreeDViewerProps> = ({
       animationFrameId = requestAnimationFrame(animate);
 
       // Spin rotors when armed
-      if (telemetry.isArmed) {
+      if (telemetryArmedRef.current) {
         rotorsRef.current.forEach((rotor, i) => {
           rotor.rotation.y += (i % 2 === 0 ? 0.45 : -0.45);
         });
@@ -214,40 +216,54 @@ export const ThreeDViewer: React.FC<ThreeDViewerProps> = ({
     };
   }, []);
 
+  useEffect(() => {
+    telemetryArmedRef.current = telemetry.hasTelemetry === true && telemetry.isArmed === true;
+  }, [telemetry.hasTelemetry, telemetry.isArmed]);
+
+  const liveTelemetryMapped = Boolean(telemetry.hasTelemetry && Number.isFinite(telemetry.lat) && Number.isFinite(telemetry.lng));
+
   // Update Drone 3D Position & Attitude from Genuine Telemetry
   useEffect(() => {
-    if (!droneGroupRef.current || !cameraRef.current) return;
+    if (!droneGroupRef.current || !cameraRef.current || !liveTelemetryMapped) return;
     const drone = droneGroupRef.current;
     const camera = cameraRef.current;
 
-    // 1. Altitude mapping: 1m real = 0.5 units in 3D
-    const targetY = Math.max(0.6, (telemetry.altitude || 0) * 0.5);
+    if (!referenceRef.current) {
+      referenceRef.current = { lat: telemetry.lat, lng: telemetry.lng };
+    }
+
+    const reference = referenceRef.current;
+    const northMeters = (telemetry.lat - reference.lat) * 111139;
+    const eastMeters = (telemetry.lng - reference.lng) * 111139 * Math.cos(THREE.MathUtils.degToRad(reference.lat));
+    drone.position.x = eastMeters * 0.1;
+    drone.position.z = -northMeters * 0.1;
+
+    // Real ArduPilot values mapped to the 3D model without inventing flight behavior.
+    const mappedAltitude = typeof telemetry.relativeAltitude === 'number' ? telemetry.relativeAltitude : telemetry.altitude;
+    const targetY = Math.max(0.6, mappedAltitude * 0.5);
     drone.position.y = THREE.MathUtils.lerp(drone.position.y, targetY, 0.15);
 
-    // 2. Roll & Pitch (deg to rad)
     const rollRad = THREE.MathUtils.degToRad(telemetry.roll || 0);
     const pitchRad = THREE.MathUtils.degToRad(-(telemetry.pitch || 0));
-    const yawRad = THREE.MathUtils.degToRad(-(telemetry.headingDegrees || 0));
+    const yawDeg = typeof telemetry.headingDegrees === 'number' ? telemetry.headingDegrees : (typeof telemetry.yaw === 'number' ? telemetry.yaw : 0);
+    const yawRad = THREE.MathUtils.degToRad(-yawDeg);
 
     drone.rotation.order = 'YXZ';
     drone.rotation.y = yawRad;
     drone.rotation.z = rollRad;
     drone.rotation.x = pitchRad;
 
-    // 3. Camera Modes
     if (cameraMode === 'chase') {
       const offset = new THREE.Vector3(0, 12, -28).applyAxisAngle(new THREE.Vector3(0, 1, 0), yawRad);
       camera.position.lerp(drone.position.clone().add(offset), 0.1);
       camera.lookAt(drone.position.clone().add(new THREE.Vector3(0, 2, 0)));
     } else if (cameraMode === 'gimbal') {
-      // Downward gimbal camera perspective
       camera.position.set(drone.position.x, drone.position.y - 0.5, drone.position.z);
       camera.rotation.set(-Math.PI / 2.3, 0, yawRad);
     } else {
-      // Free orbit view
       camera.lookAt(drone.position);
     }
-  }, [telemetry, cameraMode]);
+  }, [telemetry, cameraMode, liveTelemetryMapped]);
 
   // Keyboard Flight Controls
   useEffect(() => {
@@ -278,16 +294,22 @@ export const ThreeDViewer: React.FC<ThreeDViewerProps> = ({
       {/* 3D WebGL Canvas */}
       <div ref={mountRef} style={{ width: '100%', height }} />
 
+      {!liveTelemetryMapped && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#06090f]/85 text-cyan-300 font-mono text-xs tracking-[0.2em]">
+          3D VIEW — LIVE TELEMETRY NOT YET MAPPED
+        </div>
+      )}
+
       {/* Top HUD Overlay */}
       <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none font-mono text-xs">
         <div className="flex items-center gap-2 bg-[#090e18]/85 backdrop-blur-md px-3 py-1.5 rounded-lg border border-slate-800 pointer-events-auto shadow-lg">
           <Navigation className="w-3.5 h-3.5 text-cyan-400" />
-          <span className="font-bold text-slate-200">3D TACTICAL AIRFRAME VIEW</span>
+          <span className="font-bold text-slate-200">LIVE ARDUPILOT 3D VIEW</span>
           <span className="text-slate-600">|</span>
-          <span className="text-cyan-400">{telemetry.flightMode}</span>
+          <span className="text-cyan-400">{telemetry.hasTelemetry ? telemetry.flightMode : 'NO DATA'}</span>
           <span className="text-slate-600">|</span>
-          <span className={telemetry.isArmed ? 'text-emerald-400 font-bold' : 'text-amber-400'}>
-            {telemetry.isArmed ? 'ARMED (MOTORS SPINNING)' : 'DISARMED'}
+          <span className={telemetry.hasTelemetry && telemetry.isArmed ? 'text-emerald-400 font-bold' : 'text-amber-400'}>
+            {telemetry.hasTelemetry ? (telemetry.isArmed ? 'ARMED' : 'DISARMED') : 'ARMED: NO DATA'}
           </span>
         </div>
 
@@ -325,14 +347,14 @@ export const ThreeDViewer: React.FC<ThreeDViewerProps> = ({
         {/* Real Attitude Readout */}
         <div className="bg-[#090e18]/85 backdrop-blur-md px-3 py-2 rounded-lg border border-slate-800 space-y-1 text-[11px]">
           <div className="flex items-center gap-4 text-slate-300">
-            <span>ROLL: <strong className="text-cyan-400">{telemetry.roll}°</strong></span>
-            <span>PITCH: <strong className="text-cyan-400">{telemetry.pitch}°</strong></span>
-            <span>YAW: <strong className="text-cyan-400">{telemetry.headingDegrees}° ({telemetry.heading})</strong></span>
+            <span>ROLL: <strong className="text-cyan-400">{telemetry.hasTelemetry ? `${telemetry.roll}°` : '---'}</strong></span>
+            <span>PITCH: <strong className="text-cyan-400">{telemetry.hasTelemetry ? `${telemetry.pitch}°` : '---'}</strong></span>
+            <span>YAW: <strong className="text-cyan-400">{telemetry.hasTelemetry ? `${telemetry.headingDegrees}° (${telemetry.heading})` : '---'}</strong></span>
           </div>
           <div className="flex items-center gap-4 text-slate-400">
-            <span>ALT: <strong className="text-slate-200">{telemetry.altitude}m</strong></span>
-            <span>SPEED: <strong className="text-slate-200">{telemetry.speed}m/s</strong></span>
-            <span>BATTERY: <strong className="text-emerald-400">{telemetry.battery}%</strong></span>
+            <span>ALT: <strong className="text-slate-200">{telemetry.hasTelemetry ? `${telemetry.altitude}m` : '---'}</strong></span>
+            <span>SPEED: <strong className="text-slate-200">{telemetry.hasTelemetry ? `${telemetry.speed}m/s` : '---'}</strong></span>
+            <span>BATTERY: <strong className="text-emerald-400">{telemetry.hasTelemetry ? `${telemetry.battery}%` : '---'}</strong></span>
           </div>
         </div>
 

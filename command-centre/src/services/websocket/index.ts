@@ -2,13 +2,14 @@
 // Streams genuine UAV telemetry, Governor evaluations, and communication events
 
 export const WS_BASE_URL =
-  (import.meta as any).env?.VITE_WS_URL || 'ws://127.0.0.1:8000/ws';
+  (import.meta as any).env?.VITE_WS_URL || 'ws://127.0.0.1:8000/ws/mission';
 
 export type WebSocketListener<T = any> = (data: T) => void;
 
 export type ConnectionState =
   | 'SIMULATOR OFFLINE'
   | 'CONNECTING'
+  | 'WAITING FOR HEARTBEAT'
   | 'CONNECTED'
   | 'TELEMETRY ACTIVE'
   | 'SIMULATOR CONNECTION LOST';
@@ -52,7 +53,7 @@ export class MissionWebSocketClient {
 
       this.ws.onopen = () => {
         this.reconnectAttempts = 0;
-        this.updateStatus('CONNECTED');
+        this.updateStatus('WAITING FOR HEARTBEAT');
         this.startHeartbeat();
       };
 

@@ -15,7 +15,7 @@ S.I.G.H.T. is a software proof of concept for separating perception from mission
 
 This repository contains a FastAPI backend, the S.I.G.H.T. core decision engine, a mission-data communication controller, a React/TypeScript Command Centre, simulator adapter interfaces, and a local synthetic fallback simulator.
 
-The repository does **not** currently verify an end-to-end connection to an installed ArduPilot or PX4 SITL process. The default backend mode is `fallback`.
+The repository includes a real `pymavlink` adapter path for ArduPilot/PX4-compatible endpoints and a separate fallback simulator. Live SITL validation is environment-dependent and requires a reachable heartbeat. The normal backend startup script selects `SIMULATOR_MODE=local`; use `fallback` explicitly for offline development.
 
 ## Core Principle
 
@@ -56,7 +56,7 @@ S.I.G.H.T. Backend
 Ground Command Centre
 ```
 
-The ArduPilot MAVLink adapter is the intended architecture target and is **PLANNED / IMPLEMENTATION TARGET**; no class named `ArduPilotMavlinkAdapter` currently exists. The existing class named `PX4Adapter` is general MAVLink adapter code that contains a `pymavlink` connection, telemetry decoders, and command methods for a configurable endpoint, including ArduPilot mode handling. PX4 support is optional/future and has not been verified here. `CloudAdapter` is configurable remote MAVLink endpoint support, not an implemented cloud simulator. A live external simulator connection was not available during this audit, so this path is **not verified operationally**.
+No class named `ArduPilotMavlinkAdapter` exists. The existing `PX4Adapter` is general MAVLink adapter code with a `pymavlink` connection, telemetry decoders, command methods, and ArduPilot mode handling for a configurable endpoint. `CloudAdapter` is configurable remote MAVLink endpoint support, not a supplied cloud simulator. Live external SITL verification remains environment-dependent.
 
 MAVLink is an open lightweight messaging protocol widely used in UAV and autopilot ecosystems.
 
@@ -83,9 +83,9 @@ These states describe software decisions and packet accounting. They do not prov
 
 ### Real UAV simulator integration
 
-**Status: PARTIALLY IMPLEMENTED / NOT YET VERIFIED**
+**Status: IMPLEMENTED ADAPTER PATH / LIVE SITL VERIFICATION ENVIRONMENT-DEPENDENT**
 
-The intended target is an existing ArduPilot SITL process reached through `pymavlink`; the repository does not include the simulator installation or binary. `simulator/adapters/px4_adapter.py` is existing general MAVLink adapter code, despite its filename/class name. It supports TCP/UDP endpoint configuration, heartbeat decoding, telemetry normalization, and command dispatch for an external endpoint. The adapter contains methods for arm, disarm, takeoff, land, move, heading, hover, and return-to-launch. Mission upload is currently a stub returning success rather than performing a MAVLink mission transfer.
+The adapter reaches an existing ArduPilot SITL process through `pymavlink`; the repository does not include the simulator installation or binary. `simulator/adapters/px4_adapter.py` supports TCP/UDP endpoint configuration, heartbeat decoding, telemetry normalization, command dispatch, and the MAVLink mission-upload handshake. It contains methods for arm, disarm, takeoff, land, move, heading, hover, return-to-launch, and mission upload. A successful mission upload requires the actual `MISSION_ACK` from the connected vehicle.
 
 The test suite contains live-SITL tests, but they are skip-gated when the configured endpoint is unreachable. No live SITL connection was verified in this audit.
 
@@ -227,12 +227,13 @@ README.md            This authoritative repository status
 | Governor | IMPLEMENTED | Eight-rule decision order and tests |
 | Communication Controller | IMPLEMENTED | Packet records, retention, counters, simulated latency |
 | Edge AI | PARTIALLY IMPLEMENTED | Virtual detector default; optional YOLO integration |
-| ArduPilot MAVLink adapter | PLANNED / IMPLEMENTATION TARGET | No `ArduPilotMavlinkAdapter` class currently exists; existing `PX4Adapter` is general MAVLink adapter code |
+| ArduPilot MAVLink adapter | IMPLEMENTED integration path | Existing `PX4Adapter` is general MAVLink adapter code; no separate ArduPilot-named class exists |
 | Existing MAVLink adapter interface | IMPLEMENTED as integration code | `PX4Adapter` uses `pymavlink`; live endpoint not verified |
-| ArduPilot SITL | PLANNED / NOT YET VERIFIED | No external simulator process is included or running in this audit |
+| ArduPilot SITL | EXTERNAL / NOT INCLUDED | Start an installed SITL process separately and verify its heartbeat |
 | PX4 SITL | OPTIONAL / NOT VERIFIED | Adapter tables exist, but no live PX4 process was verified |
 | Real telemetry | PLANNED / NOT YET VERIFIED | Adapter decoder exists; current default is fallback |
-| Real flight control | PLANNED / NOT YET VERIFIED | Commands exist; live command/result verification was skipped |
+| Real flight control | IMPLEMENTED command path / live verification pending | Commands use the adapter when `SIMULATOR_MODE=local` and a reachable MAVLink endpoint is configured |
+| MAVLink mission upload | IMPLEMENTED protocol path / live verification pending | `MISSION_COUNT`, mission requests, `MISSION_ITEM_INT`, and `MISSION_ACK` |
 | Camera pipeline | PARTIAL / FALLBACK | Synthetic frames and external stream reader; real source not verified |
 | WebSocket integration | IMPLEMENTED | `/ws` and `/ws/telemetry` routes plus frontend client |
 | Remote MAVLink endpoint | CONFIGURATION PATH ONLY | `CloudAdapter` wraps a configurable endpoint; no remote simulator service is supplied or verified |
@@ -320,7 +321,7 @@ The backend default is `SIMULATOR_MODE=fallback`. Use `SIMULATOR_MODE=local` or 
 ### In scope
 
 - Software simulation and fallback testing
-- Real ArduPilot SITL integration as a planned target
+- Real ArduPilot SITL integration through the external MAVLink adapter, pending live environment verification
 - External simulator adapter interfaces where implemented
 - MAVLink parsing and command-dispatch code where implemented
 - Mission Cards, context, geofencing, and deterministic governance
@@ -344,10 +345,9 @@ The verified current implementation is the software Governor and Mission Card pi
 
 ### Roadmap: PLANNED / NOT YET IMPLEMENTED OR VERIFIED
 
-- Implement and validate the ArduPilot MAVLink adapter target
 - Connect and validate an existing ArduPilot SITL instance
 - Verify live MAVLink telemetry and flight-command results
-- Implement and verify MAVLink mission upload
+- Verify MAVLink mission upload against live ArduPilot SITL
 - Connect a real simulator camera or documented external video source
 - Run Edge AI inference on that real camera stream
 - Complete live end-to-end simulator-to-Command-Centre validation
@@ -363,3 +363,173 @@ The verified current implementation is the software Governor and Mission Card pi
 **Team: Aero Whisper**
 
 S.I.G.H.T. is a mission-aware software architecture: **sense locally, decide locally, communicate selectively**.
+
+## Requirements
+
+- Windows development environment with PowerShell.
+- Python 3.12 or newer is expected by the startup script; the checked environment uses Python 3.12.
+- Node.js and npm for the Vite Command Centre. The repository does not pin a Node.js version in `package.json`; use a current LTS release.
+- Optional WSL2/Ubuntu installation for building and running ArduPilot SITL.
+- `pymavlink`, FastAPI, Uvicorn, Pydantic, NumPy, OpenCV, and the other Python dependencies installed in the active environment.
+- Frontend dependencies are declared in `command-centre/package.json`, including React 19, Leaflet 1.9, Three.js, TypeScript, Vite, and Tailwind CSS.
+- An external ArduPilot SITL installation is required for real MAVLink verification. The repository does not include the SITL binary.
+
+## Installation
+
+### Windows and Python
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+```
+
+The repository has no root `requirements.txt`. Use the existing project virtual environment, or install the backend imports required by your selected runtime, including FastAPI, Uvicorn, Pydantic, NumPy, OpenCV, and `pymavlink`. Then install frontend packages:
+
+```powershell
+cd command-centre
+npm install
+cd ..
+```
+
+The `sight-core/pyproject.toml` declares the core package requirement `pydantic>=2.0`. Verify the environment with `python -m compileall` and the test suite.
+
+### WSL2 and ArduPilot
+
+Install ArduPilot and its Ubuntu build dependencies in WSL2 according to the ArduPilot documentation. Build or locate `ArduCopter`, then either run SITL from WSL or set `ARDUPILOT_SITL_PATH` to a Windows-accessible directory containing the binary. The helper script expects `udp:127.0.0.1:14550` by default.
+
+## How To Start
+
+The supported PowerShell helper starts three processes:
+
+```powershell
+.\scripts\start-all.ps1
+```
+
+Or use separate terminals:
+
+```powershell
+# Terminal 1: external ArduPilot SITL, or .\scripts\start-sitl.ps1 when ARDUPILOT_SITL_PATH is configured
+# Terminal 2
+.\scripts\start-backend.ps1
+# Terminal 3
+.\scripts\start-frontend.ps1
+```
+
+The backend is served at `http://127.0.0.1:8000` and the Vite frontend at `http://localhost:5173`.
+
+The backend startup script sets `SIMULATOR_MODE=local`. For offline development only:
+
+```powershell
+$env:SIMULATOR_MODE = "fallback"
+python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+```
+
+## Real ArduPilot SITL
+
+The real path is:
+
+```text
+ArduPilot SITL -> MAVLink -> PX4Adapter -> FastAPI -> Command Centre
+```
+
+The adapter accepts TCP or UDP endpoints through `MAVLINK_ENDPOINT`; the normal local default is `udp:172.30.16.1:14550`, while `scripts/start-sitl.ps1` defaults to `udp:127.0.0.1:14550`. Confirm the actual endpoint used by the SITL/MAVProxy bridge before connecting. Verify a heartbeat with MAVProxy or the live-SITL tests before sending commands. Starting the Command Centre does not automatically ARM or TAKEOFF the vehicle.
+
+## Manual Flight Test
+
+At the MAVProxy `MAV>` prompt, use the operator-controlled sequence:
+
+```text
+mode GUIDED
+arm throttle
+takeoff 20
+mode LOITER
+mode LAND
+```
+
+The Command Centre follows the same real command path when connected. TAKEOFF requires telemetry-confirmed ARM and must not silently auto-arm. Uploading a mission does not ARM, TAKEOFF, select AUTO, or start flight.
+
+## Command Centre Sections
+
+- **Dashboard**: operational monitoring, telemetry, detections, Governor state, timeline, and a clean operational map. It has no mission-authoring toolbar.
+- **Tactical Map**: the full Leaflet mission-authoring view. The map is followed by the Mission Editor and a single waypoint/hot-zone inspector.
+- **Simulation**: operator flight-control and telemetry console.
+- **Mission Card**: mission configuration and authoritative Mission Card data.
+- **Governor**: `SUPPRESS`, `RETAIN`, `EVENT`, and `EVIDENCE` decisions.
+- **Communication**: Communication Controller state, retained data, events, evidence, and software counters.
+- **Camera**: camera frame/stream and detection visualization when a provider is available.
+
+## Tactical Map User Guide
+
+1. Open the Tactical Map route at `/map`.
+2. Click **EDIT MISSION**.
+3. Click **ADD WAYPOINT**, then click the Leaflet map to place WP1. Repeat for WP2 and WP3.
+4. Select a waypoint to inspect or edit its altitude, or delete it from the inspector below the map.
+5. Click **ADD HOT ZONE**, use the existing map point interaction, and finish the polygon.
+6. Select the zone below the map to edit its name, priority, active state, or delete it.
+7. Click **SAVE MISSION**. The backend validates and stores the Mission Card, then the frontend reloads the authoritative result.
+8. Use **UPLOAD TO UAV** only after the UAV/SITL connection is available.
+
+**SAVE MISSION** persists the local authoritative Mission Card. **UPLOAD TO UAV** is a separate MAVLink transfer to the vehicle and does not start flight.
+
+## MAVLink Mission Upload
+
+The adapter uses the real mission protocol:
+
+```text
+MISSION_COUNT
+    -> MISSION_REQUEST_INT or MISSION_REQUEST
+    -> MISSION_ITEM_INT for each waypoint
+    -> MISSION_ACK
+```
+
+Upload is rejected when SITL is disconnected, no waypoints exist, or waypoint coordinates/altitudes are invalid. The UI reports success only after the adapter receives `MISSION_ACK`; a timeout or missing ACK is not reported as success. Live ArduPilot ACK verification remains dependent on a reachable SITL instance.
+
+## Perception and Communication
+
+The detector factory supports the default `VirtualDetector` and optional Ultralytics `YOLODetector`; tracking, persistence, Mission Context, Governor decisions, and Communication Controller accounting are separate stages. Current detector settings include `SIGHT_DETECTOR_BACKEND`, `SIGHT_YOLO_MODEL_PATH`, `SIGHT_ALLOW_DETECTOR_FALLBACK`, `SIGHT_YOLO_DEVICE`, `SIGHT_YOLO_CONFIDENCE`, `SIGHT_TRACK_IOU_THRESHOLD`, and `SIGHT_TRACK_MAX_MISSED_FRAMES`.
+
+The Governor decides whether a detection is `SUPPRESS`, `RETAIN`, `EVENT`, or `EVIDENCE`. The Communication Controller converts that decision into software packet/accounting behavior and exposes packet, byte, event, evidence, retained, suppressed, and simulated-latency metrics. These are not RF measurements.
+
+## Testing
+
+```powershell
+python -m compileall -q backend simulator sight-core communication
+python -m pytest -q
+cd command-centre
+npm run build
+npm run lint
+```
+
+The `sitl`-marked tests require a reachable external ArduPilot/PX4 SITL process. Passing fallback and adapter tests do not prove real SITL connectivity. Real verification must explicitly record the SITL endpoint, heartbeat, commands issued, telemetry observed, and mission `MISSION_ACK`.
+
+## Troubleshooting
+
+- **Backend does not start**: activate `.venv`, verify Python dependencies, and run `python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000` directly.
+- **Frontend does not start**: run `npm install` in `command-centre`, then `npm run dev -- --host 127.0.0.1 --port 5173`.
+- **Tactical Map is blank**: confirm the `/map` route is open, the browser console has no Leaflet error, and the map has its explicit responsive height. Tile loading also requires network access to the configured tile provider.
+- **UAV telemetry unavailable**: confirm a heartbeat, `SIMULATOR_MODE=local`, and the `MAVLINK_ENDPOINT`/SITL port match.
+- **SITL not connecting**: verify the endpoint with MAVProxy, confirm UDP forwarding or TCP listening, and run `pytest -m sitl` only after SITL is running.
+- **TAKEOFF rejected**: connect first, ARM, wait for telemetry to confirm `isArmed`, and use a valid altitude. The system intentionally does not auto-arm.
+- **Mission upload rejected**: verify the Mission Card has valid waypoints, the vehicle is connected, and inspect the returned ACK or timeout message.
+- **Map tiles not loading**: check internet access and browser network/CSP errors; the map can still display overlays without tiles but will not be a usable basemap.
+- **Camera unavailable**: inspect `/api/v1/camera/status` and confirm a simulator camera provider or external stream is configured.
+- **YOLO unavailable**: inspect `/api/v1/detector/status`, install Ultralytics/model dependencies if desired, or use the documented Virtual Detector fallback.
+
+## Current Limitations
+
+- ArduPilot SITL is external software; no hardware UAV, RF, or outdoor flight validation is included.
+- The synthetic fallback camera and Virtual Detector are not evidence of real camera or YOLO performance.
+- Target geolocation is limited by the available telemetry/detection location source.
+- Mission upload is implemented, but live `MISSION_ACK` verification remains environment-dependent.
+- No RF invisibility, anti-jamming, guaranteed stealth, or fixed communication-reduction percentage is claimed.
+
+## Stage-2 Demo Procedure
+
+1. Start ArduPilot SITL and confirm a heartbeat.
+2. Start the backend, then the Command Centre.
+3. Verify connection and telemetry.
+4. Open Tactical Map, create waypoints and a hot zone, save the Mission Card, and upload it to the UAV.
+5. Open Simulation, then manually ARM and TAKEOFF.
+6. Observe real telemetry, then manually use LOITER, LAND, or RTL.
+7. Show Governor decisions, Communication Controller state, and camera/detection output.

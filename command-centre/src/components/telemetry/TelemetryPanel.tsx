@@ -14,33 +14,34 @@ import {
 
 export const TelemetryPanel: React.FC = () => {
   const { telemetry, mission } = useSimulation();
+  const live = telemetry.hasTelemetry;
 
   return (
     <div className="space-y-6 font-mono">
       {/* Flight Avionics Primary Readouts */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <MetricCard
-          label="ALTITUDE"
-          value={telemetry.altitude}
+          label="ALTITUDE AGL"
+          value={live ? (telemetry.relativeAltitude ?? 'N/A') : '---'}
           unit="m AGL"
-          subValue={`Climb: +${telemetry.climbRate} m/s`}
+          subValue={live ? `Climb: ${telemetry.climbRate} m/s` : 'UNKNOWN'}
           icon={<Gauge className="w-4 h-4 text-cyan-400" />}
           variant="cyan"
         />
 
         <MetricCard
           label="GROUND SPEED"
-          value={telemetry.speed}
+          value={live ? telemetry.speed : '---'}
           unit="m/s"
-          subValue={`~${(telemetry.speed * 3.6).toFixed(0)} km/h`}
+          subValue={live ? `~${(telemetry.speed * 3.6).toFixed(0)} km/h` : 'UNKNOWN'}
           icon={<Plane className="w-4 h-4 text-cyan-400" />}
           variant="cyan"
         />
 
         <MetricCard
           label="HEADING"
-          value={telemetry.heading}
-          unit={`${telemetry.headingDegrees}°`}
+          value={live ? telemetry.heading : '---'}
+          unit={live ? `${telemetry.headingDegrees}°` : 'UNKNOWN'}
           subValue="True North Track"
           icon={<Compass className="w-4 h-4 text-amber-400" />}
           variant="amber"
@@ -48,24 +49,24 @@ export const TelemetryPanel: React.FC = () => {
 
         <MetricCard
           label="BATTERY"
-          value={`${telemetry.battery}%`}
-          subValue={`${telemetry.batteryVoltage} V (6S LiPo)`}
+          value={live ? `${telemetry.battery}%` : '---'}
+          subValue={live ? `${telemetry.batteryVoltage} V` : 'UNKNOWN'}
           icon={<Battery className="w-4 h-4 text-emerald-400" />}
-          variant={telemetry.battery < 25 ? 'crimson' : 'emerald'}
+          variant={!live ? 'default' : telemetry.battery < 25 ? 'crimson' : 'emerald'}
         />
 
         <MetricCard
           label="GPS FIX"
-          value={telemetry.gpsStatus}
-          subValue={`${telemetry.gpsSatellites} Sats | HDOP ${telemetry.hdop}`}
+          value={live ? telemetry.gpsStatus : 'UNKNOWN'}
+          subValue={live ? `${telemetry.gpsSatellites} Sats | HDOP ${telemetry.hdop}` : 'UNKNOWN'}
           icon={<Satellite className="w-4 h-4 text-emerald-400" />}
           variant="emerald"
         />
 
         <MetricCard
           label="FLIGHT MODE"
-          value={telemetry.flightMode}
-          subValue="PX4 Autonomous"
+          value={live ? telemetry.flightMode : 'UNKNOWN'}
+          subValue={live ? 'ArduPilot SITL' : 'WAITING FOR HEARTBEAT'}
           icon={<Navigation className="w-4 h-4 text-cyan-400" />}
           variant="default"
         />
@@ -169,8 +170,8 @@ export const TelemetryPanel: React.FC = () => {
           </div>
 
           <div className="p-2.5 rounded bg-[#0d1422] border border-slate-800 text-center text-xs">
-            <span className="text-slate-400 text-[10px] uppercase block">TARGET WAYPOINT HEADING</span>
-            <span className="font-bold text-cyan-400">BEARING 048° TO PRIORITY ZONE ALPHA</span>
+            <span className="text-slate-400 text-[10px] uppercase block">CURRENT HEADING</span>
+            <span className="font-bold text-cyan-400">{live ? `${telemetry.headingDegrees}° TRUE NORTH` : 'N/A'}</span>
           </div>
         </div>
 
@@ -181,7 +182,7 @@ export const TelemetryPanel: React.FC = () => {
               <MapPin className="w-4 h-4 text-emerald-400" />
               GNSS & Radio Link
             </span>
-            <span className="text-[10px] text-emerald-400 font-bold">RTK DUAL-ANTENNA</span>
+            <span className="text-[10px] text-slate-400 font-bold">GNSS STATUS</span>
           </div>
 
           <div className="space-y-2.5 text-xs">

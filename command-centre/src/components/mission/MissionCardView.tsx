@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 
 export const MissionCardView: React.FC = () => {
-  const { mission, updateMissionCard } = useSimulation();
+  const { mission, missionLoading, missionSource, errors, saveMissionCard } = useSimulation();
   const card = mission.card;
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -26,6 +26,9 @@ export const MissionCardView: React.FC = () => {
           <div className="flex items-center gap-2 text-xs font-mono text-cyan-400 uppercase tracking-widest font-semibold mb-1">
             <FileCheck2 className="w-4 h-4" />
             <span>Active Mission Card Definition</span>
+          </div>
+          <div className={`text-[10px] font-mono uppercase tracking-wider ${missionSource === 'LIVE' ? 'text-emerald-400' : 'text-amber-400'}`}>
+            {missionLoading ? 'MISSION: LOADING' : missionSource === 'LIVE' ? 'MISSION SOURCE: LIVE BACKEND' : `MISSION: ${missionSource}`}
           </div>
           <h2 className="text-2xl font-bold text-slate-100 font-mono tracking-tight">
             {card.missionId} — {card.objective}
@@ -161,7 +164,7 @@ export const MissionCardView: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 font-mono">
           {card.priorityZones.map((zone, idx) => (
             <div
-              key={zone}
+              key={zone.id}
               className="p-3.5 rounded-lg bg-[#0e1625] border border-slate-800 flex items-center justify-between"
             >
               <div className="flex items-center gap-3">
@@ -169,7 +172,7 @@ export const MissionCardView: React.FC = () => {
                   {idx + 1}
                 </span>
                 <div>
-                  <div className="text-sm font-bold text-slate-200">{zone}</div>
+                  <div className="text-sm font-bold text-slate-200">{zone.name}</div>
                   <div className="text-[11px] text-slate-400">Restricted operational envelope</div>
                 </div>
               </div>
@@ -185,9 +188,14 @@ export const MissionCardView: React.FC = () => {
       <MissionCardUploadModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        onApply={updateMissionCard}
+        onApply={saveMissionCard}
         currentCard={card}
       />
+      {errors.missionError && (
+        <div className="text-xs font-mono text-red-400 border border-red-900/60 bg-red-950/20 rounded-lg px-3 py-2">
+          {errors.missionError}
+        </div>
+      )}
     </div>
   );
 };

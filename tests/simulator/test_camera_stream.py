@@ -62,3 +62,70 @@ def test_camera_fov_target_detection():
         uav_heading_deg=45.0
     )
     assert frame.shape == (480, 640, 3)
+
+
+def test_world_entities_are_loaded_as_dictionary():
+    from simulator.gazebo.world_server import GazeboWorldServer
+
+    world = GazeboWorldServer()
+    assert isinstance(world.entities, dict)
+    assert "VEH-01" in world.entities
+    assert world.entities["VEH-01"].object_class == "Vehicle"
+
+
+def test_camera_frame_changes_when_pose_changes():
+    from simulator.camera.synthetic_camera_provider import SyntheticCameraProvider
+
+    class DummyTelemetry:
+        latitude = 34.0522
+        longitude = -117.8247
+        relative_altitude_m = 40.0
+        heading_deg = 0.0
+
+    provider = SyntheticCameraProvider(adapter=DummyTelemetry())
+    frame_a = provider.sensor.capture_frame(
+        uav_lat=34.0522,
+        uav_lng=-117.8247,
+        uav_alt_m=40.0,
+        uav_heading_deg=0.0,
+        target_timestamp="t0",
+    )
+    frame_b = provider.sensor.capture_frame(
+        uav_lat=34.0522,
+        uav_lng=-117.8247,
+        uav_alt_m=80.0,
+        uav_heading_deg=90.0,
+        target_timestamp="t1",
+    )
+
+    assert frame_a.shape == (480, 640, 3)
+    assert frame_b.shape == (480, 640, 3)
+    assert not np.array_equal(frame_a, frame_b)
+
+
+def test_camera_status_tracks_active_synthetic_provider():
+    import backend.main as backend_main
+    from types import SimpleNamespace
+
+    class DummyAdapter:
+        def __init__(self):
+            self.is_connected = True
+            self.mode_name = "local"
+            self.telemetry = SimpleNamespace(
+                latitude=34.0522,
+                longitude=-117.8247,
+                relative_altitude_m=45.0,
+                heading_deg=45.0,
+            )
+            self._camera_provider = None
+
+    backend_main._sim_adapter = DummyAdapter()
+    backend_main._sim_adapter._camera_provider = backend_main.SyntheticCameraProvider(adapter=backend_main._sim_adapter)
+
+    backend_main._refresh_camera_state_from_adapter()
+    response = backend_main.camera_status()
+
+    assert response["status"] == "CONNECTED"
+    assert response["online"] is True
+    assert response["fps"] == 15
+    assert response["resolution"] == "640x480"

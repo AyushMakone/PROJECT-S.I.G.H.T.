@@ -24,13 +24,13 @@ export const MapView: React.FC = () => {
       </div>
 
       {/* Expanded Map */}
-      <div className="flex-1 min-h-[600px] w-full rounded-xl overflow-hidden shadow-2xl">
+      <div className="w-full rounded-xl overflow-visible shadow-2xl">
         <MissionMap
           telemetry={telemetry}
           waypoints={waypoints}
           priorityZones={priorityZones}
           detections={detections}
-          height="100%"
+          height="clamp(380px, 68vh, 700px)"
         />
       </div>
     </div>

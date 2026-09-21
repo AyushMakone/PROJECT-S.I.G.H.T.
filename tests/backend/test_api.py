@@ -56,7 +56,7 @@ class TestHealth:
     def test_health_status_operational(self):
         r = client.get("/api/v1/health")
         data = r.json()
-        assert data["status"] == "OPERATIONAL"
+        assert data["status"] == "ok"
 
     def test_health_components_present(self):
         r = client.get("/api/v1/health")
@@ -298,6 +298,7 @@ class TestGovernorState:
 
     def test_governor_history_accumulates(self):
         client.post("/api/v1/reset")
+        client.post("/api/v1/telemetry", json={"battery_percent": 80.0})
         client.post("/api/v1/detect", json=ZONE_DETECTION)
         client.post("/api/v1/detect", json=IRRELEVANT_DETECTION)
         r = client.get("/api/v1/governor/history")

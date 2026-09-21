@@ -166,10 +166,10 @@ class FallbackAdapter(BaseSimulatorAdapter):
                 id=wp_data.get("id", ""),
                 name=wp_data.get("name", ""),
                 lat=float(wp_data.get("lat", 0.0)),
-                lng=float(wp_data.get("lng", 0.0)),
-                altitude_m=float(wp_data.get("altitude_m", 80.0)),
+                lng=float(wp_data.get("lng", wp_data.get("lon", 0.0))),
+                altitude_m=float(wp_data.get("altitude_m", wp_data.get("altitude", 80.0))),
                 speed_mps=float(wp_data.get("speed_mps", 12.0)),
-                acceptance_radius_m=float(wp_data.get("acceptance_radius_m", 8.0)),
+                acceptance_radius_m=float(wp_data.get("acceptance_radius_m", wp_data.get("acceptanceRadius", 8.0))),
                 is_priority_zone=bool(wp_data.get("is_priority_zone", False))
             )
             waypoints.append(wp)

@@ -2,7 +2,7 @@ import React from 'react';
 import { GovernorState } from '../../types';
 
 interface DecisionBadgeProps {
-  decision: GovernorState;
+  decision: GovernorState | 'UNKNOWN';
   size?: 'sm' | 'md' | 'lg' | 'xl';
   pulse?: boolean;
 }
@@ -13,7 +13,7 @@ export const DecisionBadge: React.FC<DecisionBadgeProps> = ({
   pulse = false
 }) => {
   const configs: Record<
-    GovernorState,
+    GovernorState | 'UNKNOWN',
     { bg: string; text: string; border: string; glow: string; desc: string }
   > = {
     EVENT: {
@@ -43,6 +43,13 @@ export const DecisionBadge: React.FC<DecisionBadgeProps> = ({
       border: 'border-purple-500/50',
       glow: 'shadow-purple-500/20',
       desc: 'Image/clip payload prepared'
+    },
+    UNKNOWN: {
+      bg: 'bg-slate-800',
+      text: 'text-slate-400',
+      border: 'border-slate-700',
+      glow: 'shadow-slate-900/10',
+      desc: 'No genuine detection evaluated'
     }
   };
 

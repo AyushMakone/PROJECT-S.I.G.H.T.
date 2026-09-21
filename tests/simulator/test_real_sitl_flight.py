@@ -101,8 +101,8 @@ class TestPX4AdapterUnit:
         adapter = PX4Adapter()
         assert "tcp" in adapter.connection_string or "udp" in adapter.connection_string
         assert not adapter.is_connected
-        assert not adapter.is_armed
-        assert adapter.flight_mode == "DISARMED"
+        assert adapter.is_armed is None
+        assert adapter.flight_mode is None
 
     def test_adapter_custom_endpoint(self):
         """PX4Adapter should store a custom TCP endpoint correctly."""
@@ -135,8 +135,8 @@ class TestPX4AdapterUnit:
         from simulator.adapters.px4_adapter import PX4Adapter
         adapter = PX4Adapter()
         telem = adapter.telemetry
-        assert telem.is_armed is False
-        assert telem.flight_mode == "DISARMED"
+        assert telem.is_armed is None
+        assert telem.flight_mode is None
         assert telem.link_status in ("OFFLINE", "ONLINE", "LOST", None, "")
 
     @pytest.mark.asyncio
@@ -159,6 +159,8 @@ class TestPX4AdapterUnit:
         assert isinstance(telem, dict)
         for key in ("lat", "lng", "altitude", "speed", "headingDegrees", "battery", "isArmed", "flightMode"):
             assert key in telem, f"Key '{key}' missing from telemetry dict"
+        assert telem["lat"] is None
+        assert telem["linkStatus"] == "LOST"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

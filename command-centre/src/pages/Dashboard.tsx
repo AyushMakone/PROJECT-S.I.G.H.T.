@@ -31,6 +31,7 @@ export const Dashboard: React.FC = () => {
               priorityZones={priorityZones}
               detections={detections}
               height="480px"
+              enableMissionEditing={false}
             />
           </div>
 
