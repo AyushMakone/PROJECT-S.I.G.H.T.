@@ -533,5 +533,4 @@ The `sitl`-marked tests require a reachable external ArduPilot/PX4 SITL process.
 5. Open Simulation, then manually ARM and TAKEOFF.
 6. Observe real telemetry, then manually use LOITER, LAND, or RTL.
 7. Show Governor decisions, Communication Controller state, and camera/detection output.
-#   P R O J E C T - S . I . G . H . T .  
- 
+#
